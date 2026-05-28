@@ -1,0 +1,255 @@
+# bloom-filter tests.
+#
+# Notes on what this file isn't:
+#
+# - It doesn't use `aql:test`. In this AQL build, chained `test.test`
+#   invocations share a stack that accumulates state across calls;
+#   after 2-3 tests the next assertion's `get` sees prior test names
+#   instead of the BloomFilter instance, so we can't drive the
+#   imperative test API through the bloom API reliably.
+# - It doesn't import `bloom.aql`. AQL's sub-import cannot resolve
+#   `aql:math`, and `bloom.aql`'s constructor requires it, so the
+#   library source is concatenated here. Keep in sync.
+#
+# Each check below sums (actual eq expected) values into `pass-count`.
+# At the end we print pass-count and the expected total. Failures are
+# visible as a mismatch.
+#
+# Run:
+#   aql test/bloom_test.aql
+
+
+"aql:math" import end
+
+
+# --- library (kept in sync with bloom.aql) -------------------------
+
+def Bits refine Object {}
+
+def BloomFilter refine Object {
+  n:     0
+  p:     0.0
+  m:     0
+  k:     0
+  added: 0
+  bits:  Bits
+}
+
+def alphabet " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+
+def code-at fn [
+  [i:Integer s:String] [Integer] [
+    def c (s slice i (i add 1))
+    def idx (c alphabet indexof)
+    idx 32 add
+  ]
+]
+
+def codes-of fn [
+  [s:String] [List] [
+    def n (s size)
+    (iota n) each [
+      s swap code-at
+    ]
+  ]
+]
+
+def fnv-step fn [
+  [code:Integer acc:Integer] [Integer] [
+    def x (acc bxor code)
+    def y (x mul 16777619)
+    y band 4294967295
+  ]
+]
+
+def hash1 fn [
+  [s:String] [Integer] [
+    2166136261 (s codes-of) [fnv-step] fold
+  ]
+]
+
+def hash2 fn [
+  [s:String] [Integer] [
+    def base (1099511628211 (s codes-of) [fnv-step] fold)
+    base bor 1
+  ]
+]
+
+def bit-key fn [
+  [i:Integer] [String] [
+    convert String i
+  ]
+]
+
+def bit-test fn [
+  [i:Integer bits:Any] [Integer] [
+    def k (i bit-key)
+    def v (bits k get)
+    v otherwise 0
+  ]
+]
+
+def bit-mark fn [
+  [i:Integer bits:Any] [Object] [
+    def k (i bit-key)
+    bits 1 k set
+    bits
+  ]
+]
+
+def as-string fn [
+  [item:Any] [String] [
+    convert String item
+  ]
+]
+
+def indices-for fn [
+  [item:Any bf:Any] [List] [
+    def s (item as-string)
+    def h1 (s hash1)
+    def h2 (s hash2)
+    def m (bf "m" get)
+    def k (bf "k" get)
+    (iota k) each [
+      mul h2 add h1 mod m
+    ]
+  ]
+]
+
+def derive-m fn [
+  [p:Decimal n:Integer] [Integer] [
+    def lnp (p math.log)
+    def ln2 (2 math.log)
+    def num (n math.negate convert Decimal mul lnp)
+    def den (ln2 mul ln2)
+    def raw (num div den)
+    raw math.ceil
+  ]
+]
+
+def derive-k fn [
+  [m:Integer n:Integer] [Integer] [
+    def ln2 (2 math.log)
+    def raw (m convert Decimal mul ln2 div n)
+    raw math.round
+  ]
+]
+
+def make-bloom fn [
+  [opts:Map] [Object] [
+    def n-val (opts "n" get)
+    def p-val (opts "p" get)
+    def m-val (n-val p-val derive-m)
+    def k-val (n-val m-val derive-k)
+    def empty-bits (make Bits {})
+    make BloomFilter {
+      n:     n-val
+      p:     p-val
+      m:     m-val
+      k:     k-val
+      added: 0
+      bits:  empty-bits
+    }
+  ]
+]
+
+def bloom-add fn [
+  [item:Any bf:Any] [Object] [
+    def bits (bf "bits" get)
+    def _ ((bf item indices-for) each [
+      bits swap bit-mark end
+    ])
+    def added (bf "added" get)
+    def new-added (added add 1)
+    bf new-added "added" set
+    bf
+  ]
+]
+
+def bloom-contains fn [
+  [item:Any bf:Any] [Boolean] [
+    def bits (bf "bits" get)
+    def k (bf "k" get)
+    def s (0 ((bf item indices-for) each [
+      bits swap bit-test end
+    ]) [add end] fold)
+    s k eq
+  ]
+]
+
+def popcount fn [
+  [bf:Any] [Integer] [
+    def bits (bf "bits" get)
+    def m (bf "m" get)
+    0 (iota m each [bits swap bit-test end]) [add end] fold
+  ]
+]
+
+def bloom-count fn [
+  [bf:Any] [Integer] [
+    def x (bf popcount end)
+    def m (bf "m" get)
+    def k (bf "k" get)
+    def saturated (x m eq)
+    saturated if [
+      (bf "added" get)
+    ] [
+      def md (m convert Decimal)
+      def kd (k convert Decimal)
+      def xd (x convert Decimal)
+      def ratio (md sub xd div md)
+      def lnr (ratio math.log)
+      def est (md math.negate div kd mul lnr)
+      est math.round
+    ]
+  ]
+]
+
+
+# --- tests ----------------------------------------------------------
+#
+# A test is `def passN (actual eq-expected)` where eq-expected is
+# `value1 value2 eq`. Sum all those Booleans-as-Integers at the end.
+# Boolean true is treated as Integer 1 when added.
+
+"--- bloom-filter tests ---" print
+
+def bf-p ({n: 1000, p: 0.01} make-bloom)
+def p1 ((bf-p "n" get) 1000 eq)
+def p2 ((bf-p "p" get) 0.01 eq)
+def p3 ((bf-p "m" get) 9586 eq)
+def p4 ((bf-p "k" get) 7    eq)
+
+def bf-empty ({n: 1000, p: 0.01} make-bloom)
+def p5 ((bf-empty "anything" bloom-contains end) false eq)
+
+def bf-h ({n: 1000, p: 0.01} make-bloom)
+def _add-h (bf-h "hello" bloom-add)
+def p6 ((bf-h "hello"     bloom-contains end) true  eq)
+def p7 ((bf-h "not-there" bloom-contains end) false eq)
+
+# bulk: add three distinct keys, verify count tracks add count
+def bf-b ({n: 1000, p: 0.01} make-bloom)
+def _add-a (bf-b "alpha" bloom-add)
+def _add-b (bf-b "beta"  bloom-add)
+def _add-c (bf-b "gamma" bloom-add)
+
+def p8a ((bf-b "alpha" bloom-contains end) true eq)
+def p8b ((bf-b "beta"  bloom-contains end) true eq)
+def p8c ((bf-b "gamma" bloom-contains end) true eq)
+
+def cnt (bf-b bloom-count end)
+def p9 ((2 lte cnt) (cnt lte 4) and)
+
+
+"p1  derived-n        : " printstr p1  print
+"p2  derived-p        : " printstr p2  print
+"p3  derived-m        : " printstr p3  print
+"p4  derived-k        : " printstr p4  print
+"p5  fresh-empty      : " printstr p5  print
+"p6  contains-hello   : " printstr p6  print
+"p7  contains-other-F : " printstr p7  print
+"p8a contains-alpha   : " printstr p8a print
+"p8b contains-beta    : " printstr p8b print
+"p8c contains-gamma   : " printstr p8c print
+"p9  count-near-3     : " printstr p9  print
