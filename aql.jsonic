@@ -2,4 +2,5 @@ name: bloom-filter
 major: 0
 minor: 1
 patch: 0
-files: [index.aql]
+main: bloom.aql
+files: [bloom.aql]
