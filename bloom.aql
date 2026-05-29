@@ -1,46 +1,44 @@
 # bloom-filter: minimal probabilistic set membership in AQL.
 #
-# Public surface (the "Bloom" namespace mapped at the bottom):
+# Public surface (the Bloom namespace exported at the bottom):
 #
 #   {n:Integer, p:Decimal} Bloom.make     → BloomFilter
-#   bf item                Bloom.add      → BloomFilter (mutated in place, returned)
+#   bf item                Bloom.add      → BloomFilter (mutated in place)
 #   bf item                Bloom.contains → Boolean
-#   bf                     Bloom.count    → Integer  (approximate cardinality)
+#   bf                     Bloom.count    → Integer  (cardinality estimate)
 #   bf                     Bloom.params   → Map      ({n, p, m, k})
-#   bf                     Bloom.encode   → String   (jsonic body of filter state)
 #   a b                    Bloom.merge    → BloomFilter (m and k must match)
 #
-# BloomFilter is a subtype of Object. Bit storage is a nested `Bits`
-# Object whose fields are stringified bit indices set to 1.
+# BloomFilter is a `refine Object` subtype. Bit storage is a nested
+# `Bits` Object whose fields are stringified bit indices set to 1.
 #
-# This build of AQL cannot resolve native modules (`aql:math`) from
-# inside an `import module` body or a sub-imported file, so the library
-# is defined at the top level of a single file. Run it directly:
-#
-#   aql bloom.aql            # imports math, defines the API, runs a smoke demo
-#   aql test/bloom_test.aql  # runs assertions
+# Imported via `"./bloom.aql" import end` from another script; that
+# script doesn't need to pre-import `aql:math` because the library
+# imports it itself.
 
 
-"aql:math" import
+"aql:math" import end
 
 
 # --- types ----------------------------------------------------------
 
-def Bits refine Object {}
+def Bits (refine Object {})
 
-def BloomFilter refine Object {
+def BloomFilter (refine Object {
   n:     0
   p:     0.0
   m:     0
   k:     0
   added: 0
-  bits:  Bits
-}
+  bits:  (make Bits {})
+})
 
 
 # --- hashing --------------------------------------------------------
 
-# 95-char printable ASCII alphabet; index 0..94 ↔ codes 32..126.
+# 95-char printable ASCII alphabet; index 0..94 ↔ codes 32..126. AQL
+# does not expose char→code directly, so we look up via the alphabet's
+# `indexof`. Non-printable input maps to space (32).
 def alphabet " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 
 def code-at fn [
@@ -54,14 +52,14 @@ def code-at fn [
 def codes-of fn [
   [s:String] [List] [
     def n (s size)
-    (iota n) each [
+    iota n each [
       s swap code-at
     ]
   ]
 ]
 
-# FNV-1a step wrapped as a typed fn so the body avoids the forward-
-# precedence trap on bare `bxor` next to a constant.
+# Single FNV-1a-style step. Wrapped as a typed fn so the body avoids
+# the forward-precedence trap on bare `bxor` next to a constant.
 def fnv-step fn [
   [code:Integer acc:Integer] [Integer] [
     def x (acc bxor code)
@@ -76,6 +74,8 @@ def hash1 fn [
   ]
 ]
 
+# h2 is OR'd with 1 so it's always odd — guarantees the index sequence
+# (h1 + i*h2) mod m covers all residues.
 def hash2 fn [
   [s:String] [Integer] [
     def base (1099511628211 (s codes-of) [fnv-step] fold)
@@ -93,7 +93,7 @@ def bit-key fn [
 ]
 
 def bit-test fn [
-  [i:Integer bits:Any] [Integer] [
+  [i:Integer bits:Bits] [Integer] [
     def k (i bit-key)
     def v (bits k get)
     v otherwise 0
@@ -101,10 +101,9 @@ def bit-test fn [
 ]
 
 def bit-mark fn [
-  [i:Integer bits:Any] [Object] [
+  [i:Integer bits:Bits] [] [
     def k (i bit-key)
     bits 1 k set
-    bits
   ]
 ]
 
@@ -118,14 +117,14 @@ def as-string fn [
 ]
 
 def indices-for fn [
-  [item:Any bf:Any] [List] [
+  [item:Any bf:BloomFilter] [List] [
     def s (item as-string)
     def h1 (s hash1)
     def h2 (s hash2)
-    def m (bf "m" get)
-    def k (bf "k" get)
-    (iota k) each [
-      # stack: i
+    def m bf.m
+    def k bf.k
+    iota k each [
+      # stack: i — forward arithmetic gives (h1 + i*h2) mod m.
       mul h2 add h1 mod m
     ]
   ]
@@ -153,20 +152,21 @@ def derive-k fn [
   ]
 ]
 
+# `opts:Options` still breaks dispatch in this build (Map works);
+# tracked in dx-report.md §4.1.
 def make-bloom fn [
-  [opts:Map] [Object] [
+  [opts:Map] [BloomFilter] [
     def n-val (opts "n" get)
     def p-val (opts "p" get)
     def m-val (n-val p-val derive-m)
     def k-val (n-val m-val derive-k)
-    def empty-bits (make Bits {})
     make BloomFilter {
       n:     n-val
       p:     p-val
       m:     m-val
       k:     k-val
       added: 0
-      bits:  empty-bits
+      bits:  (make Bits {})
     }
   ]
 ]
@@ -175,27 +175,24 @@ def make-bloom fn [
 # --- core operations ------------------------------------------------
 
 def bloom-add fn [
-  [item:Any bf:Any] [Object] [
-    def bits (bf "bits" get)
-    # each body must return a value; we ignore the resulting list.
+  [item:Any bf:BloomFilter] [BloomFilter] [
+    def bits bf.bits
     def _ ((bf item indices-for) each [
-      # stack: idx
+      # stack: idx — push bits below, then bit-mark consumes (i, bits).
       bits swap bit-mark end
+      0
     ])
-    def added (bf "added" get)
-    def new-added (added add 1)
-    bf new-added "added" set
+    bf (bf.added 1 add) "added" set
     bf
   ]
 ]
 
 def bloom-contains fn [
-  [item:Any bf:Any] [Boolean] [
-    def bits (bf "bits" get)
-    def k (bf "k" get)
-    def s (0 ((bf item indices-for) each [
-      bits swap bit-test end
-    ]) [add end] fold)
+  [item:Any bf:BloomFilter] [Boolean] [
+    def bits bf.bits
+    def k bf.k
+    def hits ((bf item indices-for) each [bits swap bit-test end])
+    def s (0 hits [add end] fold)
     s k eq
   ]
 ]
@@ -203,25 +200,29 @@ def bloom-contains fn [
 
 # --- secondary operations -------------------------------------------
 
-# O(m) popcount via scan; sufficient for cardinality estimate at small m.
+# O(m) popcount via scan.
 def popcount fn [
-  [bf:Any] [Integer] [
-    def bits (bf "bits" get)
-    def m (bf "m" get)
-    0 (iota m each [bits swap bit-test end]) [add end] fold
+  [bf:BloomFilter] [Integer] [
+    def bits bf.bits
+    def m bf.m
+    def hits (iota m each [bits swap bit-test end])
+    0 hits [add end] fold
   ]
 ]
 
-# Swamidass–Baldi: n_est = -(m/k) * ln(1 - X/m).
+# Swamidass–Baldi: n_est = -(m/k) * ln(1 - X/m). Branch on the
+# saturated case (every bit set) up front so we don't take log(0).
+#
+# `if` is invoked in its full-forward form `if cond [then] [else]` —
+# the mixed `cond if [then] [else]` form picks the wrong branch in
+# this build (dx-report §6.2).
 def bloom-count fn [
-  [bf:Any] [Integer] [
+  [bf:BloomFilter] [Integer] [
     def x (bf popcount end)
-    def m (bf "m" get)
-    def k (bf "k" get)
+    def m bf.m
+    def k bf.k
     def saturated (x m eq)
-    saturated if [
-      (bf "added" get)
-    ] [
+    if saturated [bf.added] [
       def md (m convert Decimal)
       def kd (k convert Decimal)
       def xd (x convert Decimal)
@@ -234,44 +235,64 @@ def bloom-count fn [
 ]
 
 def bloom-params fn [
-  [bf:Any] [Map] [
-    def n (bf "n" get)
-    def p (bf "p" get)
-    def m (bf "m" get)
-    def k (bf "k" get)
-    do {n: [n], p: [p], m: [m], k: [k]}
+  [bf:BloomFilter] [Map] [
+    do {n: [bf.n], p: [bf.p], m: [bf.m], k: [bf.k]}
   ]
 ]
 
-# bloom-encode and bloom-merge are intentionally omitted from this
-# build. Both require an `each [ ... if ... else ... ]` body whose true
-# branch leaves the iteration index on the stack while the false branch
-# pushes a sentinel. In this AQL build the typed-fn dispatch on `eq`/
-# `if` inside that body raises "condition produced no value" — the trip
-# is reproducible but the root cause looks like a runtime issue, not
-# something the library can work around. Re-add when upstream lands the
-# fix.
+
+# --- merge ----------------------------------------------------------
+
+def bloom-merge fn [
+  [b:BloomFilter a:BloomFilter] [BloomFilter] [
+    def am a.m
+    def bm b.m
+    def ak a.k
+    def bk b.k
+    def m-ok (am bm eq)
+    def k-ok (ak bk eq)
+    if (m-ok not) [
+      "bloom.merge: m mismatch" error
+    ] [
+      if (k-ok not) [
+        "bloom.merge: k mismatch" error
+      ] [
+        def a-bits a.bits
+        def b-bits b.bits
+        def _ (iota am each [
+          # stack: i — if b's bit set, mark a's bit; always push 0
+          # so the each body produces something.
+          var [[i]
+            def is-set (b-bits i bit-test end 1 eq)
+            if is-set [
+              a-bits i bit-mark end
+              0
+            ] [
+              0
+            ]
+          ]
+        ])
+        a (a.added b.added add) "added" set
+      ]
+    ]
+    a
+  ]
+]
 
 
 # --- namespace ------------------------------------------------------
-# Bloom is a Map of the public words. Callers use `bf "hello" Bloom.add`
-# style. (Native `export` only resolves when the file is loaded via
-# `import`, and this build's importer can't re-load `aql:math` from a
-# sub-import — see header comment.)
+#
+# Functions are exported with `/r` so the auto-evaluating map literal
+# doesn't dispatch them at construction time. Types and bare values go
+# in bare. See REFERENCE.md §"Word modifiers".
 
-# Skipping `def Bloom { ... }` until the eager map-literal eval issue is
-# understood — callers use the bare top-level names (make-bloom, bloom-add,
-# bloom-contains, bloom-count, bloom-params, bloom-encode, bloom-merge).
-
-
-# --- smoke demo -----------------------------------------------------
-
-"--- bloom-filter smoke demo ---" print
-def bf ({n: 1000, p: 0.01} make-bloom)
-"params:    " print (bf bloom-params end) print
-def _ (bf "hello" bloom-add)
-def __ (bf "world" bloom-add)
-"hello?:    " print (bf "hello" bloom-contains end) print
-"world?:    " print (bf "world" bloom-contains end) print
-"absent?:   " print (bf "not-added" bloom-contains end) print
-"count:     " print (bf bloom-count end) print
+export "Bloom" {
+  BloomFilter: BloomFilter
+  Bits:        Bits
+  make:        make-bloom/r
+  add:         bloom-add/r
+  contains:    bloom-contains/r
+  count:       bloom-count/r
+  params:      bloom-params/r
+  merge:       bloom-merge/r
+}
