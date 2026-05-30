@@ -17,7 +17,8 @@
 # imports it itself.
 
 
-"aql:math" import end
+"aql:math"  import end
+"aql:array" import end
 
 
 # --- types ----------------------------------------------------------
@@ -190,10 +191,7 @@ def bloom-add fn [
 def bloom-contains fn [
   [item:Any bf:BloomFilter] [Boolean] [
     def bits bf.bits
-    def k bf.k
-    def hits ((bf item indices-for) each [bits swap bit-test end])
-    def s (0 hits [add end] fold)
-    s k eq
+    (bf item indices-for) each [bits swap bit-test end] all end
   ]
 ]
 
@@ -237,6 +235,27 @@ def bloom-count fn [
 def bloom-params fn [
   [bf:BloomFilter] [Map] [
     do {n: [bf.n], p: [bf.p], m: [bf.m], k: [bf.k]}
+  ]
+]
+
+
+# Encode bf as a jsonic-style String: filter parameters plus a list of
+# the currently-set bit indices. Cheap and round-trip-safe via decode.
+def bloom-encode fn [
+  [bf:BloomFilter] [String] [
+    def bits bf.bits
+    def m    bf.m
+    def hits (iota m each [bits swap bit-test end])
+    def set-idxs (array.where hits end)
+    def payload (do {
+      n:     [bf.n]
+      p:     [bf.p]
+      m:     [bf.m]
+      k:     [bf.k]
+      added: [bf.added]
+      set:   [set-idxs]
+    })
+    `${payload}`
   ]
 ]
 
@@ -287,12 +306,13 @@ def bloom-merge fn [
 # in bare. See REFERENCE.md §"Word modifiers".
 
 export "Bloom" {
-  BloomFilter: BloomFilter
-  Bits:        Bits
-  make:        make-bloom/r
-  add:         bloom-add/r
-  contains:    bloom-contains/r
-  count:       bloom-count/r
-  params:      bloom-params/r
-  merge:       bloom-merge/r
+  BloomFilter
+  Bits
+  make:     make-bloom/r
+  add:      bloom-add/r
+  contains: bloom-contains/r
+  count:    bloom-count/r
+  params:   bloom-params/r
+  encode:   bloom-encode/r
+  merge:    bloom-merge/r
 }
