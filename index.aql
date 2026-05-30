@@ -1,0 +1,28 @@
+# Smoke demo for the bloom-filter module. Imports the library and
+# walks through every public word.
+
+"./bloom.aql" import end
+
+"--- bloom-filter smoke demo ---" print
+
+def bf ({n: 1000, p: 0.01} Bloom.make end)
+
+"params:   " print (bf Bloom.params end) print
+
+def _add-hello (bf "hello" Bloom.add end)
+def _add-world (bf "world" Bloom.add end)
+
+"hello?:   " print (bf "hello"      Bloom.contains end) print
+"world?:   " print (bf "world"      Bloom.contains end) print
+"absent?:  " print (bf "not-added"  Bloom.contains end) print
+"count:    " print (bf Bloom.count end) print
+"encode:   " print (bf Bloom.encode end) print
+
+# Merge into a second filter built with matching (n, p).
+def bf2 ({n: 1000, p: 0.01} Bloom.make end)
+def _add-fizz (bf2 "fizz" Bloom.add end)
+
+def merged (bf bf2 Bloom.merge end)
+"merged-hello?:" print (merged "hello" Bloom.contains end) print
+"merged-fizz?: " print (merged "fizz"  Bloom.contains end) print
+"merged-count: " print (merged Bloom.count end) print

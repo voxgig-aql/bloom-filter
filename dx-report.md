@@ -1,11 +1,32 @@
 # AQL Developer Experience Report
 
-Built against `aql-lang/aql @ 12a31e6` (HEAD on `main`, 2026-05-28),
-installed via `go install … /cmd/go/aql` from the cloned source. The
-target was a minimal bloom-filter library — BloomFilter as a subtype
-of `Object`, Options-style constructor, `aql:test`-driven tests. What
-follows is an exhaustive list of the friction encountered, with
-reproducible examples and concrete recommendations.
+**Original report:** `aql-lang/aql @ 12a31e6` (HEAD on `main`,
+2026-05-28).
+**Second pass:** `aql-lang/aql @ f7247dd` (HEAD on `main`,
+2026-05-29) — 1135 commits later. Most of the original P0/P1 items
+had landed.
+**Third pass:** `aql-lang/aql @ 333c420` (HEAD on `main`,
+2026-05-29 later in day) — another 24 commits, adding the
+`aql:array` module, the `range` word, shorthand `{x}` map literals,
+source-position-aware errors, and DX-specific fixes to the
+dispatch-failure error format. The library was further refined:
+`bloom-contains` collapses to a one-liner with `all`, `bloom-encode`
+is back via `array.where`, and the export map uses the shorthand
+form.
+
+Each section is marked **[fixed]**, **[partial]**, or **[open]** in
+its header so the team can mine just the still-actionable items.
+Items marked **[fixed]** are preserved in the report because the
+original explanation may still help anyone hitting the same shape on
+an older build.
+
+The target was a minimal bloom-filter library — BloomFilter as a
+`refine Object` subtype, Options-style constructor, `aql:test`-driven
+tests. The library was re-implemented against `f7247dd` and then
+refined against `333c420`; the code that ships in this repo today
+(`bloom.aql` + `index.aql` + `test/bloom_test.aql`) is the cleaner
+pass. What follows is the exhaustive list of friction encountered
+along the way.
 
 The report is long on purpose; it's meant to be a single document the
 team can mine for issues rather than a polished essay.
@@ -14,51 +35,159 @@ team can mine for issues rather than a polished essay.
 
 ## 0. Executive summary
 
-The biggest pain points, ranked by how much time they cost:
+### Original six top-line issues (status after `f7247dd`)
 
-1. **First-parameter-is-top-of-stack convention is inverted in the
-   docs.** `HOWTO.md` line 80 shows `3 4 show => '3 and 4'`. Real
-   output is `'4 and 3'`. Every fn signature has to be flipped from
-   the documented intuition.
-2. **Forward precedence eats subsequent words silently.** Any time a
-   user-defined word is followed by another word (including
-   `print`, `assert.equal`, `if`, `def`, …) the first word collects
-   the second as a positional arg. The fix is `end`, which has to be
-   sprinkled on virtually every call.
-3. **Sub-imports cannot reach native modules.** `"aql:math" import`
-   only works from the top-level script. A file imported via
-   `"./lib.aql" import` cannot itself import `aql:math`, so any
-   library that wants `log`/`ceil`/`round`/etc. has to live in the
-   same file as its caller. This collapses the whole module story.
-4. **Custom-subtype names in `fn` signatures break dispatch.** Type
-   annotations like `bf:BloomFilter` (where `BloomFilter` is a
-   user-defined `refine Object` type) fail to accept their own
-   instances; the only working annotations are `Any`, `Object`,
-   `Map`, primitives. So the type system contributes no static
-   safety on top of `Any` for user types — but it does contribute
-   silent dispatch failures that look like syntax errors.
-5. **Lists don't survive `def`.** `def xs [1,2,3]` doesn't bind `xs`
-   to the list value; every later reference to `xs` re-evaluates the
-   literal and pushes its elements *individually* onto the stack.
-   Folds, prints, and pretty much everything that wants a List value
-   then fail with confusing signature errors.
-6. **`type X object { …, method: [body] }` is shown as the
-   primary OO pattern in HOWTO** but neither `type` (it's undefined)
-   nor inline method dispatch (`c inc` with `inc` declared inside
-   the object body) works in this build. The closest path that
-   compiles is `def C refine Object { … }` plus a free `fn` that
-   takes the instance as a parameter.
+| # | Issue | Status |
+|---|-------|--------|
+| 1 | First-parameter-is-top-of-stack convention is inverted in HOWTO `3 4 show => '3 and 4'` | **fixed** — TUTORIAL §3 now states the rule precisely and the example matches runtime |
+| 2 | Forward precedence eats subsequent words silently | **open** — `end` is still needed everywhere; the error message doesn't suggest it |
+| 3 | Sub-imports cannot reach native modules | **fixed** — `"aql:math" import` now propagates into file-imported children (commit 489a1d9) |
+| 4 | Custom-subtype names in `fn` signatures break dispatch | **fixed** — `bf:BloomFilter` works on both parameter and return slots (commit b7f921e) |
+| 5 | Lists don't survive `def` | **fixed** — `def x [1,2,3]` binds the list as a value; `def x word [1,2,3]` opts into the old splice semantics (commit 65cb341) |
+| 6 | `type X object { …, method: [body] }` is documented but doesn't work | **fixed** — HOWTO §"Define an object type with methods" now shows the working `refine Object` + free-fn pattern (commit 331dab9) |
 
-The good news: once you've internalized these six gotchas, AQL is
-expressive enough to write the library. The bad news: every one of
-those gotchas is invisible from the docs and surfaces as an opaque
-signature error in a fn body deep inside the file.
+### What still costs significant time at `333c420`
+
+Re-evaluated against the current build. Items that the third pass
+verified still bite:
+
+1. **`if` in the mixed `cond if [then] [else]` form picks the wrong
+   branch.** Only the all-forward `if cond [then] [else]` and the
+   all-stack `[else] [then] cond if` forms work. (§6.2) — **still
+   open**.
+2. **Dotted field access still parse-errors inside map literals.**
+   `{n: bf.n}` raises `unexpected character(s): .`; the workaround
+   is `{n: (bf.n)}` or pre-binding via `def`. (§3.1) — **still
+   open**.
+3. **`Options` as a parameter type still breaks dispatch.** `Map`
+   works; `Options` causes `aql/signature_error: no matching
+   signature for f` even though the fn is correctly defined. (§4.1)
+   — **still open**.
+4. **`aql check` errors before any user-code analysis if the file
+   imports a sibling.** Output: `check error: import: module ""
+   not found (searched .aql//)`. The same file runs cleanly. (§4.3)
+   — **still open** and arguably the highest-impact untouched
+   issue: it blocks CI gating for any real module.
+5. **Forward-collection eats neighbours; the error doesn't hint at
+   `end`.** Still the dominant source of confusion, but the error
+   *position* is now stamped on the offending token (commit
+   `16d58ed`), which makes the cause easier to spot if not easier
+   to fix. (§6.1)
+6. **`printstr` still leaves its arg on the stack.** (§9.1)
+7. **`each [...]` body must produce a value; no `do` / void form.**
+   The workaround — pushing a sentinel `0` — clutters every mutating
+   loop body. (§7.4)
+8. **`def name swap` looks like "pop into name" but binds `name` to
+   the literal word `swap`.** Need `var [[name] body]`. (§5.4 —
+   now well-documented but still trips beginners.)
+9. **`go install …/cmd/go/aql@latest` still rejects the module
+   because of the replace directives.** (§1.1)
+
+What got noticeably better in the third pass:
+
+- **Error positions land on the real token.** Errors that
+  previously pointed at "line 211" when the actual failure was 30
+  lines earlier now point at the call site. Three commits land
+  this (`16d58ed`, `6a44d3a`, `e3884ba`, `3c77be6`).
+- **No more body-dump on dispatch failure** (`b669a57`). The
+  600-line spew described in the original §3.4 is gone; errors
+  print a clean signature mismatch with location only.
+- **`aql:array` module** (§ new 12 below). Specialised vocabulary
+  for the work everyday users do on lists — `array.where`,
+  `array.compress`, `array.at`, `array.transpose`, etc. The
+  library's `bloom-encode` uses `array.where` to get the cleanest
+  shape possible.
+- **`{foo}` shorthand for `{foo: foo}`** simplifies the export
+  map: `export "Bloom" {BloomFilter, Bits, make: make-bloom/r, …}`
+  versus the old verbose form.
+- **`range start stop step`** complements `iota`; useful for any
+  loop where the bounds aren't `0..N-1`.
+
+The good news: the rewrite is now substantially cleaner than the
+second-pass version — `bloom-contains` is one line, `bloom-encode`
+is three. The bad news: the four most-impactful open issues (`if`
+mixed-form, `Options`, `aql check`, no-`end`-hint in errors)
+weren't touched, so the next library is going to hit them too.
+
+---
+
+## 0b. Revisit log: what landed between `f7247dd` and `333c420`
+
+The third pass against the build at `333c420`. Twenty-four more
+commits, several of which are direct hits on earlier dx-report
+items.
+
+| Item | Commits |
+|------|---------|
+| Dispatch-failure errors dumping fn bodies + registries (#3.4) | `b669a57 Stop dispatch-failure errors dumping fn bodies and module registries (DX 3.4)` |
+| Error positions point at real source location (#3.5) | `16d58ed Stamp source positions on parsed values so errors point at the real token`, `6a44d3a Thread source positions into forward-arg and return-check errors`, `e3884ba Stamp anonymous fn values with their construction position`, `3c77be6 Remove the findWordInSource fallback; state unknown positions explicitly` |
+| `aql:array` module — APL-style data vocabulary | `121c8a3 Add aql:array module; gate specialised array words behind it`, `4a74939 Complete arrayification: compress/eachrank/foldaxis; fix ADR-001 matrix deviation` |
+| Deep-flatten + list-overload of `indexof` in core | `e1b0b60 Fold deep-flatten and list-indexof into core words; add ADR.md` |
+| Shorthand map syntax `{foo}` → `{foo: foo}` (relates to #5.2) | `46fb072 Add JS-style shorthand map syntax {foo} => {foo: foo}`, `ee9342b Document map field shorthand syntax` |
+| `range` word — `iota`'s `start, stop, step` cousin | `8503254 Add range word: iota's start/stop/step cousin` |
+| `/r` (and `ref`) constrained to function words | `cefa52d ref: make /r (and ref) legal only for function words`, `23bcfb6 fix: reject word modifiers on explicit map keys`, `685ed4f fix: optional map shorthand drops word modifier from the key` |
+| Quotation and stack-model docs (relates to #2 docs) | `dc1ac22 Correct the quotation and stack-model docs to match the engine` |
+| Doc-example test harness (catches future drift) | `597ba70 Add doc-example test harness; fix drifted doc examples`, `44bd3bf Add sandboxed CLI-example test harness`, `5c9a24c test: key doc-example knownMismatch by expression, not line number` |
+| List/Map rendering style | `e95ad3e Render lists and maps space-separated, not comma-separated` |
+| Broadcasting policy (ADR-002) | `5357039 Reject broadcasting: document the decision (ADR-002)` |
+
+The cumulative effect for *this* library:
+- `bloom-encode` is restored. It uses `array.where hits` to
+  project bit-set positions out of a vector of bit-test results
+  (`[0, 1, 0, 0, 1, 1, …]` → `[1, 4, 5, …]`). No sentinel-`0`
+  pattern, no manual filter. Three lines.
+- `bloom-contains` collapses to one expression:
+  `(bf item indices-for) each [bits swap bit-test end] all`. The
+  `all` (truthy-fold) was already in core; the read is now
+  natural.
+- The export map uses the new `{BloomFilter}` shorthand for type
+  entries (`{BloomFilter, Bits, make: make-bloom/r, …}`).
+- Errors during the rewrite pointed at the *actual* failing
+  token. The "line 211 says popcount when really it's bloom-add"
+  pain from the first report is gone for the rebuilt code paths.
+- The dispatch-failure-dumps-the-whole-test-registry mess from
+  §3.4 doesn't happen anymore.
+
+What still bites:
+- `if true [99] [88] end` → `88`. Same broken mixed-form branch
+  pick as in `f7247dd`. (§6.2)
+- `Options` as a parameter type still breaks dispatch. (§4.1)
+- `aql check` still errors on every file that imports a sibling,
+  blocking it as a CI gate. (§4.3)
+- The forward-precedence trap (every user fn eats the next word
+  without `end`) is unchanged. The new improved error positions
+  do help locate it faster. (§6.1)
+
+---
+
+## 0a. Revisit log: what landed between `12a31e6` and `f7247dd`
+
+For convenience, the upstream commits that resolved items in this
+report. All commits referenced are on `main`.
+
+| Item | Commits |
+|------|---------|
+| Custom-subtype names in fn signatures (P0 #3) | `b7f921e fix: user-defined type names work as fn return annotations`, `67ddc05 feat(types): symmetric refine matching` |
+| Sub-imports cannot reach native modules (P0 #1) | `489a1d9 fix: propagate native-module Resolver into file-imported modules`, `d6d8679 fix: implement InheritConfig + InstallResolver so native sub-imports build` |
+| Lists don't survive `def` (P1 #13) | `65cb341 feat(def): list body binds the evaluated value (like a map); word splices`, `c567af4 feat(eng): add __SP splice marker and word / def name word value` |
+| Inline-method object pattern unworkable (P0 #2) | `331dab9 docs(HOWTO): document the working object-with-methods pattern`, `4037e58 docs: modernize dead syntax across docs (length→size, type/object/record/table→def+refine)` |
+| Function references in map literals (relates to #4) | `d1eec67 docs: recommend /r for storing callable functions in maps`, `68c55c3 modules: export functions with /r; drop the export auto-eval special case` |
+| Argument-order rule documented properly (P1 #5) | `885417f docs: convert remaining clean-mapping type forms; restructure signature tables`, TUTORIAL §3 added |
+| `length` removed in favour of `size` (P2 #18 partial) | `45d3091 Remove the length word; document size fully` |
+| Dot-binding tightness documented (relates to #3.1) | `a2e1d70 docs(HOWTO): note tight dot-binding for field access on a fresh construct`, `135d4c8 feat(parser): group dotted access so . binds to its receiver`, `34e17a4 feat(dot): display re-sugar + re-baseline tests` |
+
+The cumulative effect is that the library can be packaged as a real
+module: `bloom.aql` exports `Bloom` and the consumer does
+`"./bloom.aql" import end`. Custom-typed fn signatures
+(`[bf:BloomFilter]`) catch arity errors at definition time. Lists
+participate as values in `def`/`fold`/etc. The HOWTO Counter example
+compiles and runs. None of these were available in `12a31e6`.
 
 ---
 
 ## 1. Installation
 
-### 1.1 The README install command doesn't work
+### 1.1 The README install command doesn't work [open]
 
 The README's first lines say:
 
@@ -97,7 +226,13 @@ go install -ldflags "-X github.com/aql-lang/aql/cmd/go.Version=0.1.0-dev" ./aql
 - The Makefile's `publish` comment block (`make publish V=…`)
   documents the intended flow well — promote that to the README.
 
-### 1.2 Version goes silent without `-ldflags`
+**Status after `f7247dd`:** unchanged. `go install
+github.com/aql-lang/aql/cmd/go/aql@latest` against `f7247dd` fails
+with the same "module providing named packages contains one or
+more replace directives" error. The fix is still upstream-only;
+build-from-clone is the working path.
+
+### 1.2 Version goes silent without `-ldflags` [open]
 
 `go install ./aql` without the `-ldflags "-X …Version=…"` produces a
 binary whose `aql -version` prints the unhelpful default
@@ -113,7 +248,7 @@ useful even without ldflags.
 These are places where what the docs show and what the binary does
 disagree. Each one cost me at least 15 minutes of confusion.
 
-### 2.1 Stack convention is inverted
+### 2.1 Stack convention is inverted [fixed]
 
 `HOWTO.md` line 80–82:
 
@@ -146,7 +281,22 @@ garbage.
 "Stack-and-signature convention" callout to TUTORIAL.md so this
 isn't buried.
 
-### 2.2 `for` doesn't match its documented signature
+**Status after `f7247dd`:** **fixed.** TUTORIAL §3
+"The argument-order rule" now lays out the convention precisely
+("Take tokens after the word, in source order, into args[0],
+args[1], …; fill any slots still empty from the stack, top-first")
+with worked examples for `sub` and a user-defined `show`:
+
+```
+aql> 10 3 sub       # all-stack: args[0]=top=3, args[1]=10  →  10 - 3
+7
+aql> show 1 2       # forward: args[0]=1=a, args[1]=2=b
+'1 and 2'
+```
+
+Both forms execute and match the docs in the current build.
+
+### 2.2 `for` doesn't match its documented signature [fixed]
 
 HOWTO line 429:
 
@@ -173,7 +323,14 @@ instead.
 
 This is the second-biggest doc bug.
 
-### 2.3 `fold` arg order
+**Status after `f7247dd`:** **fixed.** `for 5 [body]` runs the
+body N times. HOWTO §"Iterate with `for`" was updated to clarify
+that the body sees an empty stack (`for 5 [42] => 42 42 42 42 42`)
+and to redirect users wanting the index to `iota N each [...]`.
+The previously-documented `for 5 [dup mul] => 0 1 4 9 16` was
+removed; that shape never matched the runtime.
+
+### 2.3 `fold` arg order [fixed]
 
 HOWTO line 117 uses `[1, 2, 3] fold 0 [add] => 6`. The actual
 binding is `init list body fold`:
@@ -190,7 +347,12 @@ error: [aql/signature_error]: no matching signature for fold
 `0` as its first arg and then can't find a third — but the doc
 example is misleading either way.)
 
-### 2.4 `type X object { … }` syntax
+**Status after `f7247dd`:** **fixed.** HOWTO §"Work with lists"
+shows both the all-forward (`fold [add] [1, 2, 3] 0 => 6`) and
+all-stack (`0 [1, 2, 3] [add] fold => 6`) forms, with a direct link
+to the TUTORIAL §3 argument-order rule. Both run.
+
+### 2.4 `type X object { … }` syntax [fixed]
 
 HOWTO line 380:
 
@@ -237,7 +399,26 @@ alternative shown.
 instance as their first parameter (`bf "hello" bloom-add` rather
 than `bf bloom-add "hello"` or `bf.add "hello"`).
 
-### 2.5 `make Counter` versus `make Counter {}`
+**Status after `f7247dd`:** **fixed (as a documentation
+clarification, not a feature change).** HOWTO §"Define an object
+type with methods" now explicitly states that AQL objects hold
+*fields, not methods*, that inline `inc: [count get 1 add]` does
+not create a callable, and that the canonical pattern is a typed
+`fn` whose first parameter is the instance:
+
+```
+def Counter (refine Object {count: 0})
+def doubled fn [[c:Counter] [Integer] [c.count 2 mul]]
+def c (make Counter {})
+c 5 "count" set
+c doubled                             => 10
+```
+
+There is a new subsection **"Methods are free functions over the
+instance"** at HOWTO line 414 that codifies this. That's exactly
+the pattern this repo's bloom-filter ships.
+
+### 2.5 `make Counter` versus `make Counter {}` [fixed]
 
 HOWTO line 386 shows `def c make Counter`. In practice:
 
@@ -260,7 +441,13 @@ is taken literally, you must wrap with `(...)` to eagerly evaluate.
 (b) `make` requires the field map argument explicitly, even when
 empty. Both are findable but neither is shown in the doc example.
 
-### 2.6 `import "aql:math"` doesn't import bare names
+**Status after `f7247dd`:** **fixed.** HOWTO line 397 spells this
+out: *"Wrap `make` in `(…)` so `def` binds the result to `c`
+(rather than binding `c` to the literal word `make`); the same
+grouping around `refine` keeps the type expression bound to
+`Counter`."*
+
+### 2.6 `import "aql:math"` doesn't import bare names [fixed]
 
 `aql help log` says:
 
@@ -292,7 +479,14 @@ one-line change to the help generator.
 word list, which compounds the confusion. The `math.*` words should
 either not show at the top level, or show with a `math.` prefix.
 
-### 2.7 `aql:test` is only partially documented
+**Status after `f7247dd`:** **partial.** HOWTO §"Use modules and
+imports" now explicitly shows `5 math.log => 1.6094…` and explains
+why `end` is needed after `import`. `aql help` for unloaded math
+words still lists them under bare names, though — calling `aql
+help log` advertises a top-level `log` that doesn't exist in a
+fresh session.
+
+### 2.7 `aql:test` is only partially documented [open]
 
 `design/NATIVE-MODULES.10.md` describes `aql:test` thoroughly, but
 the imperative API is unreliable in practice (see §10). The
@@ -312,7 +506,14 @@ calls, so the second `test.test` sees the previous test's residue.
 Either the docs should warn about the chaining issue, or `test.test`
 should be made stack-isolating.
 
-### 2.8 README import-from-file example
+**Status after `f7247dd`:** **partial.** Chaining now works — this
+repo's `test/bloom_test.aql` runs seven chained `test.test` calls
+with `fail-count == 0`. But the `aql:test` module is still not
+covered in the user-facing TUTORIAL/HOWTO; everything lives in
+`design/NATIVE-MODULES.10.md`. A short "Write tests" page would
+close this fully.
+
+### 2.8 README import-from-file example [fixed]
 
 TUTORIAL.md line 502 shows:
 
@@ -338,7 +539,7 @@ Small fix; align the two docs.
 
 ## 3. Parser issues
 
-### 3.1 `.` is not a valid character in map-literal values
+### 3.1 `.` is not a valid character in map-literal values [open]
 
 This is a recurring blocker:
 
@@ -367,7 +568,22 @@ def k bf.k
 jsonic dialect accepted dot paths as values, since plain expressions
 between commas work for everything else.
 
-### 3.2 Map-literal values inside fn bodies don't eagerly resolve
+**Status after `f7247dd`:** **open**, with a workaround.
+Wrapping each dotted access in parens works:
+
+```
+aql do 'def Foo (refine Object {x:1, y:2})   def f (make Foo {x:10, y:20})   def m {x: (f.x), y: (f.y)}   m print'
+{"x": 10, "y": 20}
+```
+
+So `{n: (bf.n), p: (bf.p), …}` is the path the library now uses
+where dotted access has to appear inside a map literal. The
+underlying jsonic-level limitation is unchanged. Worth either
+allowing bare dotted paths in map values, or surfacing a more
+specific error than "unexpected character(s): ." that suggests
+parens.
+
+### 3.2 Map-literal values inside fn bodies don't eagerly resolve [open]
 
 The plain `{n: n, p: p, m: m, k: k}` form returns a map whose values
 are word references, not the variables' values:
@@ -391,7 +607,23 @@ Top-level the eager-resolution works fine — it's only inside fn
 bodies that the literal stays lazy, which is a quietly large
 distinction.
 
-### 3.3 Engine panic on certain merge bodies
+**Status after `f7247dd`:** **open.** The `do {n: [n], …}` pattern
+is still the path for map literals inside fn bodies. The library's
+`bloom-params` uses it:
+
+```aql
+def bloom-params fn [
+  [bf:BloomFilter] [Map] [
+    do {n: [bf.n], p: [bf.p], m: [bf.m], k: [bf.k]}
+  ]
+]
+```
+
+Bonus from the `f7247dd` parser work: the dotted access inside
+`[bf.n]` no longer needs an extra paren level — it's inside a
+quoted list body and gets resolved at `do` time.
+
+### 3.3 Engine panic on certain merge bodies [partial]
 
 While iterating, one form of `bloom-merge` triggered a Go-level
 panic during `aql check`:
@@ -439,7 +671,15 @@ goroutine trace and exits.
 - Add a `recover()` at the top of `Engine.Run` so even genuine
   panics get wrapped in something that mentions the source location.
 
-### 3.4 Body-list contents printed on dispatch failure
+**Status after `f7247dd`:** **partial.** The specific shape that
+triggered the panic in the original report no longer reproduces —
+this build runs the same merge structure with a clean error
+instead of a Go panic. I did not exercise every variant of dot
+access inside merge bodies; the underlying lack of a `recover()`
+in the engine still means any future bug in this area surfaces as
+a goroutine trace. Worth keeping the recommendation.
+
+### 3.4 Body-list contents printed on dispatch failure [fixed]
 
 When a typed fn body is malformed *and* the fn is referenced from a
 position where the type checker speculatively analyses it, the body
@@ -465,7 +705,28 @@ print just the head plus an ellipsis (`[word(def), word(bf), …
 (48 more)]`). The registry dump in particular should never escape;
 fence it behind a `-vv` debug flag.
 
-### 3.5 Line numbers in errors lag the actual call site
+**Status after `f7247dd`:** **partial.** During the rewrite I hit
+one error of the same shape (the Options-as-param dispatch
+failure, §4.1) and the entire `aql:test` exports map got printed
+along with the function body. The dump is now ~50 lines instead of
+the 600+ from the original report, but the family of issue remains.
+
+**Status after `333c420`:** **fixed.** Commit `b669a57 Stop
+dispatch-failure errors dumping fn bodies and module registries
+(DX 3.4)` lands the targeted fix. The same Options-as-param
+failure now prints a clean signature error with location:
+
+```
+error: [aql/signature_error]: no matching signature for f
+  --> 1:47
+  1 | def f fn [[opts:Options] [Integer] [42]]   {} f end print
+                                                    ^ no matching signature for f
+```
+
+No body dump. No registry dump. Reads like a normal compiler
+error.
+
+### 3.5 Line numbers in errors lag the actual call site [fixed]
 
 Repeatedly during testing, the reported error position pointed to a
 later definition that shared a similar shape, not to the line that
@@ -491,11 +752,32 @@ shape, not the *runtime* call site.
 body-source frame in `AqlError`, and prefer the call-site frame for
 the headline arrow. Body-source can go in a `caused by:` footer.
 
+**Status after `333c420`:** **fixed.** Four commits land this:
+`16d58ed Stamp source positions on parsed values so errors point
+at the real token`, `6a44d3a Thread source positions into
+forward-arg and return-check errors`, `e3884ba Stamp anonymous fn
+values with their construction position`, and `3c77be6 Remove the
+findWordInSource fallback; state unknown positions explicitly`.
+
+Sanity check — feeding a String into an Integer-typed fn now
+points at the call site, not a similar-shape body elsewhere:
+
+```
+$ aql do 'def f fn [[a:Integer b:Integer] [Integer] [a add b]]   "hi" f end print'
+error: [aql/signature_error]: no matching signature for f
+  --> 1:61
+  1 | def f fn [[a:Integer b:Integer] [Integer] [a add b]]   "hi" f end print
+                                                                  ^ no matching signature for f
+```
+
+The arrow lands on the `f` that actually ran, not on the `f` in the
+definition. Same for forward-arg type errors and return checks.
+
 ---
 
 ## 4. Type system
 
-### 4.1 `Options` as a parameter type breaks dispatch
+### 4.1 `Options` as a parameter type breaks dispatch [open]
 
 `refine` and `make` both happily build Options-typed maps. But
 declaring `[opts:Options]` as a fn parameter causes the fn to be
@@ -520,7 +802,14 @@ $ aql do 'def f fn [[opts:Map] [Integer] [42]]   def P {make: f}   {x: 1} P.make
 trouble, so this must be a regression in user-fn `Options`
 declarations specifically. Worth a `lang/go/test` case.
 
-### 4.2 Custom subtypes as fn parameter/return types break dispatch
+**Status after `f7247dd`:** **open.** Reproduced on the current
+build: `def f fn [[opts:Options] [Integer] [42]]` followed by any
+call site through a namespace map fails with `no matching
+signature for f`. The library's `make-bloom` is declared as
+`[opts:Map]` for this reason, even though the call site semantics
+are exactly Options.
+
+### 4.2 Custom subtypes as fn parameter/return types break dispatch [fixed]
 
 ```
 $ aql do 'def Foo refine Object {x:0}   def f-inst (make Foo {x:5})   def g fn [[f:Foo] [Integer] [99]]   f-inst g print'
@@ -558,7 +847,17 @@ There's no fundamental reason `[f:Foo]` shouldn't accept
 `Object` subtype and passes its instance through both a parameter
 and a return type slot.
 
-### 4.3 `aql check` produces many false positives
+**Status after `f7247dd`:** **fixed.** Commits `b7f921e` and
+`67ddc05` land both halves: custom types accept their instances at
+parameter and return slots, and the newtype/subset distinction
+("bare `def Pos (refine Integer)` is nominal/distinct; predicate
+`def Big (Integer gt 10)` is structural") is documented in
+REFERENCE.md §"fn type semantics" and pinned in
+`design/REFINE-NEWTYPE-VS-SUBSET.0.md`. The library's
+`bloom-add fn [[item:Any bf:BloomFilter] [BloomFilter] …]` exercises
+this on every call.
+
+### 4.3 `aql check` produces many false positives [partial]
 
 Running `aql check bloom.aql` produced 262 errors in a file that
 ran without error. Almost all of them were of the form:
@@ -581,7 +880,28 @@ errors corresponded to real problems.
 reserve hard errors for things that the runtime would actually
 reject.
 
-### 4.4 Field name and method name share a namespace
+**Status after `f7247dd`:** **a different, harder failure.**
+`aql check bloom.aql` now exits with a single error before any
+analysis runs:
+
+```
+$ aql check index.aql
+check error: import: module "" not found (searched .aql// from /home/user/bloom-filter to /)
+```
+
+…even though the file does not contain any empty import. The
+problem appears to be in how `aql check` initialises the module
+resolver for files that themselves contain `import` statements.
+The same file runs cleanly via `aql index.aql`. `aql check --soft`
+hits the same error. So today `aql check` is unusable as a CI gate
+for any file that imports another (which is most real files).
+
+This is a regression versus the original report — the previous
+build's 262 false positives at least let you grep for shape — but
+the architectural complaint stands: the checker should be `--soft`
+by default and only flag things the runtime would actually reject.
+
+### 4.4 Field name and method name share a namespace [n/a]
 
 The HOWTO Counter example has a field `count` and a method
 `value: [count get]`. In a bloom filter, the natural API has a
@@ -599,14 +919,14 @@ to address the field-vs-method namespace question.
 
 ## 5. Stack and call-order surprises
 
-### 5.1 First-param is top-of-stack (already covered §2.1)
+### 5.1 First-param is top-of-stack (already covered §2.1) [fixed]
 
 Restating because it deserves a separate slot: with sig
 `[a:Integer b:Integer]`, the call `3 4 f` binds `a=4, b=3`. Most
 non-stack-language programmers will write code assuming the
 opposite for at least a day.
 
-### 5.2 `set` arg order is *not* `obj key value`
+### 5.2 `set` arg order is *not* `obj key value` [partial]
 
 The `set` signature is `(Integer Any Array)` / `(String Any Object)`
 — *key on top, then value, then object*. So mutating a field:
@@ -627,7 +947,15 @@ likely to be called by users: `get`, `set`, `make`, `refine`,
 read as gibberish because they substitute placeholder strings into
 positions that need real types.
 
-### 5.3 `def name value` doesn't evaluate `value`
+**Status after `f7247dd`:** **partial.** HOWTO §"Define an object
+type with methods" now explicitly calls out the arg order:
+`c 1 "count" set                       # c.count := 1` with the
+note "see [Tutorial §3](TUTORIAL.md#the-argument-order-rule) for
+why". This is the right teaching context for the average user.
+`aql help set`'s example list is still auto-generated nonsense
+though — open.
+
+### 5.3 `def name value` doesn't evaluate `value` [partial]
 
 `def x 5` binds `x` to the integer 5. But `def x foo` binds `x` to
 the literal *word* `foo`, not to whatever `foo` evaluates to. This
@@ -648,7 +976,14 @@ parsed, recognise that the user almost certainly meant
 clue is that later references to `c` fail with
 `undefined word: c`.
 
-### 5.4 `var [[i] body]` is the idiomatic stack pop, but never shown
+**Status after `f7247dd`:** **partial.** HOWTO and TUTORIAL now
+consistently show `def c (make Counter {})` with explicit parens
+in the canonical OO example. The runtime behaviour is unchanged
+(parens are still required), but the doc trains the right reflex.
+The error message itself still just reports `undefined word: c`
+without hinting at the cause.
+
+### 5.4 `var [[i] body]` is the idiomatic stack pop, but never shown [fixed]
 
 `def name swap` looks like it should pop the top of stack into
 `name`, but it doesn't (it binds name to the word `swap`). The
@@ -663,6 +998,14 @@ hunting for it. Every `each [body]` that needs the iteration
 variable inside a typed call needs `var`, and that pattern should
 be the *first* example under "Iterate with `for`".
 
+**Status after `f7247dd`:** **fixed.** HOWTO §"Use scoped
+variables" now opens with `"aql:math" import end   3 4 var [[a b]
+(a mul a) add (b mul b) math.sqrt] => 5.0` and explicitly says
+"Bare-word declarations pop from the stack. `a` gets the topmost
+value (4) and `b` gets the next (3), matching the argument-order
+rule." The library's `bloom-merge` uses `var [[i] body]` for the
+loop index.
+
 ---
 
 ## 6. Forward precedence: the dominant source of bugs
@@ -671,7 +1014,7 @@ Forward precedence — words look ahead for arguments — is documented
 in EXPLANATION.md and the Reference, but its real impact on
 practical code is understated.
 
-### 6.1 Every user fn collects the next word
+### 6.1 Every user fn collects the next word [open]
 
 ```
 $ aql do 'def f fn [[bf:Any] [Integer] [42]]   def Foo refine Object {}   def fi (make Foo {})   fi f print'
@@ -708,7 +1051,22 @@ mention `end` as a hint.
   `if`/`each`/`fold` that genuinely want to gather code blocks; for
   ordinary user fns it's a footgun.
 
-### 6.2 `if` branch order is documented but the runtime takes the wrong branch
+**Status after `f7247dd`:** **open.** The library still requires
+`end` after every `Bloom.add` / `Bloom.contains` / `Bloom.count` /
+`Bloom.merge` call site:
+
+```aql
+bf "hello" Bloom.add end
+…
+def hits ((bf item indices-for) each [bits swap bit-test end])
+```
+
+The error message when `end` is missing is still a signature
+mismatch on a subsequent token (`no matching signature for swap` /
+`for sub` / `for f`) that says nothing about forward collection.
+This is the single most expensive ongoing pain point for new code.
+
+### 6.2 `if` branch order is documented but the runtime takes the wrong branch [open — same bug, slightly different shape]
 
 ```
 $ aql do 'true if [99] [88] end print'
@@ -751,7 +1109,41 @@ forward-collected branches are in cond-then-else order, or fix the
 docs and help examples to show only the working `cond then else if
 end` form. Anything in between is a trap for every new user.
 
-### 6.3 Inline arithmetic body trick
+**Status after `f7247dd`:** **open**, with a sharper diagnosis.
+Two forms are now known to work; two are still broken:
+
+```
+aql do 'if true [99] [88] end print'        # full forward
+99
+aql do 'if false [99] [88] end print'       # full forward
+88
+aql do '[88] [99] true if end print'        # full postfix (else then cond if)
+99
+aql do '[88] [99] false if end print'       # full postfix
+88
+aql do 'true if [99] [88] end print'        # mixed (cond forward, branches forward)
+88                                          # ← wrong: returns else for true
+aql do 'true [99] [88] if end print'        # mixed (cond stack, branches forward)
+88                                          # ← also wrong
+```
+
+So the safe rules are: write `if cond [then] [else]` (everything
+forward of `if`) **or** `[else] [then] cond if` (everything on the
+stack). Anything that splits forward and stack between `if` and
+its args returns the wrong branch.
+
+The library uses the full-forward form throughout. `bloom-count`'s
+header comment now points users at this paragraph; future me will
+thank past me.
+
+Reproducer for the bug ticket:
+
+```aql
+def expected if true [99] [88] end       # ← legal-looking, returns 88
+def via-full if true [99] [88]           # ← works, 99
+```
+
+### 6.3 Inline arithmetic body trick [n/a]
 
 A particularly nice find: the `mul h2 add h1 mod m` body in
 `indices-for` works exactly because each operator forward-grabs the
@@ -771,7 +1163,7 @@ Concise and correct, *if* you understand forward precedence.
 Anyone reading it without that context will be lost. A worked
 "forward arithmetic" example in the tutorial would pay back fast.
 
-### 6.4 `import` grabs the next string
+### 6.4 `import` grabs the next string [partial]
 
 ```
 $ aql do '"aql:math" import   "loaded" print'
@@ -795,7 +1187,7 @@ stack-precedence would be a friendly micro-fix.
 
 ## 7. Data structure quirks
 
-### 7.1 Lists don't survive `def`
+### 7.1 Lists don't survive `def` [fixed]
 
 This was the single most surprising behaviour of the whole project:
 
@@ -841,7 +1233,28 @@ issue. Either:
   haven't verified — but the error message should be clear about
   the trade-off.)
 
-### 7.2 Maps are immutable; only Object can be mutated
+**Status after `f7247dd`:** **fixed.** The recommended option
+landed (commits `65cb341` and `c567af4`). From the spec file
+`lang/spec/def-node-binding.tsv`:
+
+```
+def x [1,2,3] x	[1 2 3]	a LIST binds the list value (was: spliced)
+def x [1,2,3] size x	3	the value is a real List — size works
+def x [1,2,3] x each [add 10]	[11 12 13]	…and higher-order words work
+def x word [1,2,3] x	1 2 3	`word` splices the elements (the old default)
+```
+
+So:
+- `def x [1,2,3]` now binds the list value, exactly like maps. The
+  library's `def hits (iota 50 each [...])` works as written;
+  earlier we had to inline the entire `iota...each` form into
+  every consumer to avoid the splice.
+- The old splice semantics are preserved as opt-in via `def x word
+  [1,2,3]` — `word` is the new splice marker.
+
+This was the highest-impact data-model fix in the dx-report list.
+
+### 7.2 Maps are immutable; only Object can be mutated [open]
 
 `set`'s signature list:
 
@@ -880,7 +1293,88 @@ even if it's just `def Bits refine Object` with integer-stringified
 keys. Or document the array-via-stringified-index pattern clearly
 as the canonical way.
 
-### 7.3 Object field defaults don't construct nested Objects
+### 7.4 `each [body]` requires the body to push a value [partial — new in `f7247dd`]
+
+When `each` is used for its side effects (e.g. setting bits in a
+bloom filter, mutating per-element state), there's no way to say
+"don't collect into a list". Every body must produce a value:
+
+```aql
+def _ ((bf item indices-for) each [
+  bits swap bit-mark end
+  0                              # only here so the body produces
+])
+```
+
+Without the trailing `0`, `each` errors with `body produced no
+result`. The accumulator `def _ (...)` discards the resulting
+`List<0, 0, 0, …>`.
+
+This becomes more invasive in mutating-with-condition loops; the
+`bloom-merge` body has to push 0 from both branches:
+
+```aql
+def _ (iota am each [
+  var [[i]
+    def is-set (b-bits i bit-test end 1 eq)
+    if is-set [
+      a-bits i bit-mark end
+      0                        # then-branch sentinel
+    ] [
+      0                        # else-branch sentinel
+    ]
+  ]
+])
+```
+
+Cleaner alternatives that would close this:
+- A `for [start, stop] [body]` form where the body's stack output
+  is discarded (HOWTO's `for 5 [42]` does *push* `42 42 42 42 42`,
+  so users do reach for the no-pollute form).
+- An `each-do [body]` variant whose result is `None`.
+- An `Any?` (zero-or-one) return convention on `each` bodies, so
+  empty bodies don't error.
+
+The current "always push a sentinel" workaround is functional but
+adds noise to every mutating loop.
+
+**Status after `333c420`:** **partial.** `for N [body]` is the
+clean answer for purely-counted loops where the body's output is
+collected on the stack:
+
+```
+$ aql do 'for 5 [42] print'
+42
+42
+42
+42
+42
+```
+
+That works for `bloom-add`'s inner loop *if* you can phrase the
+body without needing the iteration index — `for` doesn't pass it.
+The library still uses `iota N each [...]` plus a sentinel `0` in
+the merge body because the index is needed:
+
+```aql
+def _ (iota am each [
+  var [[i]
+    def is-set (b-bits i bit-test end 1 eq)
+    if is-set [
+      a-bits i bit-mark end
+      0                              # sentinel
+    ] [
+      0                              # sentinel
+    ]
+  ]
+])
+```
+
+So this is still open for "index-using void loops". An indexed
+`for [start, stop] [body]` (matching `iota`'s shape, but discarding
+the body's stack output) would close it.
+
+### 7.3 Object field defaults don't construct nested Objects [partial]
 
 ```
 $ aql do 'def Bits refine Object {}   def Foo refine Object {bits: Bits}   def inst (make Foo {})   inst.bits 1 "0" set'
@@ -916,7 +1410,7 @@ about nested object fields.
 
 ## 8. Module system
 
-### 8.1 Sub-imports cannot resolve native modules — the show-stopper
+### 8.1 Sub-imports cannot resolve native modules — the show-stopper [fixed]
 
 The plan called for a layered structure: `bloom.aql` defines and
 exports the API, `index.aql` imports it and demos. That broke
@@ -959,7 +1453,34 @@ module dependencies in `aql.jsonic` that get resolved at import
 time. The current isolation looks like a security/correctness
 boundary, but in practice it just makes module reuse impossible.
 
-### 8.2 `import 'module [body]` syntax surprise
+**Status after `f7247dd`:** **fixed.** This was the single biggest
+architectural blocker in the original report; commits `489a1d9
+fix: propagate native-module Resolver into file-imported modules`
+and `d6d8679 fix: implement InheritConfig + InstallResolver so
+native sub-imports build` resolve it. Live test against the
+current build:
+
+```aql
+# /tmp/lib.aql
+"aql:math" import end
+def lib-log fn [[x:Decimal] [Decimal] [x math.log]]
+export "lib" {log: lib-log/r}
+
+# /tmp/use.aql
+"/tmp/lib.aql" import end
+5.0 lib.log end print
+
+$ aql /tmp/use.aql
+1.6094379124341003
+```
+
+The whole point of having a module system was that libraries could
+package up their own dependencies without forcing the caller to
+import them. That works now. The library this repo ships uses it
+directly — `bloom.aql` imports `aql:math` itself, and `index.aql`
+just does `"./bloom.aql" import end` without knowing about math.
+
+### 8.2 `import 'module [body]` syntax surprise [fixed]
 
 Searching for "inline module" in the design docs eventually turned
 up the form:
@@ -989,7 +1510,23 @@ that variant to work in practice).
 **Recommendation:** sync the HOWTO with what the binary actually
 accepts, and add a CLI-reachable example.
 
-### 8.3 `export` only works during an import
+**Status after `f7247dd`:** **fixed.** HOWTO §"Use modules and
+imports" now shows the working form:
+
+```
+import module [
+  def base 10
+  def greet fn [[name:String] [String] [`hello ${name}`]]
+  export "utils" {base: base, greet: greet/r}
+]
+"Ada" utils.greet                     => 'hello Ada'
+```
+
+…including the all-important note that function values export with
+`/r` while plain values export bare. The library's `export`
+follows this pattern.
+
+### 8.3 `export` only works during an import [open]
 
 When running a file directly (`aql bloom.aql`), `export` is
 undefined:
@@ -1019,7 +1556,7 @@ modes.
 
 ## 9. Other surprises and rough edges
 
-### 9.1 `printstr` leaves its argument on the stack
+### 9.1 `printstr` leaves its argument on the stack [open]
 
 ```
 $ aql do '"hi" printstr "bye" printstr depth print'
@@ -1042,7 +1579,7 @@ stdout *does* get the right text — only the stack is wrong.
 Either `printstr` should consume like `print`, or its help should
 say "leaves the value on the stack".
 
-### 9.2 `convert String i` order isn't what you'd guess
+### 9.2 `convert String i` order isn't what you'd guess [n/a]
 
 ```
 $ aql do 'convert String 42 print'
@@ -1068,7 +1605,7 @@ form silently failed; couldn't reproduce minimally. Worth noting
 that the multiple-arg-order dispatch is convenient but the failure
 modes are unpredictable when the surrounding context is rich.
 
-### 9.3 Output reordering between `print` and `printstr`
+### 9.3 Output reordering between `print` and `printstr` [open]
 
 I never got a deterministic output order with mixed `print` and
 `printstr`:
@@ -1087,7 +1624,7 @@ panic, or the way stack residue prints at program end. Not a
 blocker, but it makes "where does this output come from" hard to
 read in test output.
 
-### 9.4 `length` only works on Lists; strings need `size`
+### 9.4 `length` only works on Lists; strings need `size` [fixed]
 
 ```
 $ aql do '"hello" length'
@@ -1104,7 +1641,21 @@ what it accepts. The signature in the help (`[List]`) is the only
 clue. Users will hit "what's the length of this string" five
 minutes in; that should be a discoverable answer.
 
-### 9.5 Help examples are auto-generated and unhelpful
+**Status after `f7247dd`:** **fixed.** Commit `45d3091
+Remove the length word; document size fully` deleted `length`
+entirely and rewrote REFERENCE.md §"Size":
+
+> `size` reports the **natural size** of *any* value as an
+> `Integer`. Unlike the collection words above — which accept only
+> a concrete list — `size` has signature `[Any]` and is a
+> **total** function: every value has a size and `size` never
+> errors.
+
+…with a table covering Lists/Maps/Strings/Atoms/Numbers/Bools/
+Paths/Objects/None. `"hello" length` now gives
+`undefined word: length`, which is the correct migration error.
+
+### 9.5 Help examples are auto-generated and unhelpful [open]
 
 ```
 $ aql help slice
@@ -1121,7 +1672,7 @@ not actual idiomatic usage. They tell you nothing about what
 surface for the language, so help quality is critical; this needs
 hand-authored examples.
 
-### 9.6 `aql check` output dwarfs the actual error count
+### 9.6 `aql check` output dwarfs the actual error count [different shape, still open]
 
 ```
 $ aql check bloom.aql
@@ -1135,7 +1686,7 @@ makes it useless as a CI gate. Either the speculative analysis
 should be quieter, or there should be a `--strict` flag that opts
 into the noisy mode.
 
-### 9.7 Subtype instances printed with `Object/Foo{...}`
+### 9.7 Subtype instances printed with `Object/Foo{...}` [open]
 
 The print form is `Object/BloomFilter{added:0,bits:Object/Bits{},k:7,m:9586,n:1000,p:0.01}`.
 The `Object/` prefix is informative but the field order is
@@ -1146,7 +1697,7 @@ keys.
 
 Stable, declaration-order output would help.
 
-### 9.8 No native hash function
+### 9.8 No native hash function [open]
 
 There's `band`/`bor`/`bxor`/`bsl`/etc. but no `hash`/`fnv`/`murmur`/
 `sha256` available even after `"aql:math" import`. Writing FNV-1a
@@ -1160,7 +1711,7 @@ poorly.
 `fnv` as a top-level word. Every probabilistic data structure, key-
 value cache, or content-addressed scheme will need this.
 
-### 9.9 No char-to-int conversion
+### 9.9 No char-to-int conversion [open]
 
 ```
 $ aql do 'convert Integer "h"'
@@ -1231,65 +1782,217 @@ works but it's not what the framework promises.
 
 ---
 
+## 11a. New since `f7247dd`: array module and friends [new]
+
+Three additions in `333c420` are worth flagging because they
+materially change the idiomatic shape of list-heavy AQL code.
+
+### `aql:array` module — APL-style data vocabulary
+
+After `"aql:array" import end`, words appear under the `array.`
+namespace. The library uses `array.where` directly. Worked
+examples:
+
+```
+$ aql do '"aql:array" import end   [1, 0, 1, 1, 0, 1] array.where end print'
+[0, 2, 3, 5]
+
+$ aql do '"aql:array" import end   [10, 20, 30, 40] array.at [3, 0, 2] end print'
+[40, 10, 30]
+
+$ aql do '"aql:array" import end   [1, 2, 3] array.replicate [2, 1, 3] end print'
+[1, 1, 2, 3, 3, 3]
+
+$ aql do '"aql:array" import end   [1, 2, 3, 4] array.compress [1, 0, 1, 0] end print'
+[1, 3]
+```
+
+Other exports: `shape`, `rank`, `reshape`, `transpose`, `grade`,
+`sortby`, `expand`, `member`, `unique`, `group`, `window`, `pairs`,
+`eachrank`, `foldaxis`. Per ADR-001 (in the repo root) the module
+deliberately doesn't shadow core words; `flatten -1` and the
+List/List overload of `indexof` were promoted to core in
+`e1b0b60`.
+
+For the bloom filter, the biggest single win is `array.where`. The
+old `bloom-encode` had to walk the bit array building a list of
+either `i` or a sentinel `-1`, then filter the `-1`s out. The
+new form is two lines:
+
+```aql
+def hits (iota m each [bits swap bit-test end])  # [0,1,0,0,1,1,…]
+def set-idxs (array.where hits end)              # [1,4,5,…]
+```
+
+That's the shape every "scan a bitmap, get the indices" loop
+should have.
+
+### `range start stop step` — `iota`'s richer cousin
+
+```
+$ aql do 'range 0 10 2 print'
+[0, 2, 4, 6, 8]
+```
+
+The library doesn't currently need this — every loop is
+`0..N-1` — but it's the obvious answer for any loop with non-zero
+start or non-unit step. Removes the awkward
+`iota N each [i mul step add start]` workaround.
+
+### Shorthand map literal `{x}` → `{x: x}`
+
+```
+$ aql do 'def x 5   def y "hi"   {x, y} print'
+{"x": 5, "y": "hi"}
+```
+
+The bloom-filter `export` map uses this for the type / Bits
+entries (the function entries still need `/r` so they stay verbose,
+but everything constructible with the bare name is now terse):
+
+```aql
+export "Bloom" {
+  BloomFilter
+  Bits
+  make:     make-bloom/r
+  add:      bloom-add/r
+  contains: bloom-contains/r
+  count:    bloom-count/r
+  params:   bloom-params/r
+  encode:   bloom-encode/r
+  merge:    bloom-merge/r
+}
+```
+
+This nudges export maps toward "small, readable" rather than "two
+columns of repetition".
+
+---
+
 ## 11. Recommendations summary (prioritised)
+
+### Original list, with current state
 
 **P0 — show-stoppers for library authors:**
 
-1. Sub-imports must be able to load native modules (`aql:math` etc.)
-   §8.1.
-2. Fix or document the HOWTO Counter example: either `type X object`
-   needs to compile and `c inc` needs to dispatch, or the example
-   needs replacing with a `def C refine Object` + free-fn pattern
-   that actually runs. §2.4.
-3. Custom subtype names must work in fn signatures. The current
-   silent dispatch failure (§4.2) makes user types useless for
-   anything beyond pretty-printing.
-4. `aql:test` chained calls must not leak stack state. §10.
+1. ~~Sub-imports must be able to load native modules~~ — **done in
+   `f7247dd`** (commits `489a1d9`, `d6d8679`). §8.1.
+2. ~~Fix or document the HOWTO Counter example~~ — **done in
+   `f7247dd`** (commit `331dab9`). §2.4.
+3. ~~Custom subtype names must work in fn signatures~~ — **done in
+   `f7247dd`** (commits `b7f921e`, `67ddc05`). §4.2.
+4. ~~`aql:test` chained calls must not leak stack state~~ — **done
+   in `f7247dd`** (no specific commit identified; chaining now
+   works). §10.
 
 **P1 — major doc fixes:**
 
-5. Stack convention example in HOWTO §"Write a typed function" must
-   match runtime behaviour. §2.1.
-6. `for 5 [dup mul]` must work, or the HOWTO example must change.
-   §2.2.
-7. `fold` arg-order example must work as written. §2.3.
-8. `aql help` examples must be hand-authored, not auto-permutations.
+5. ~~Stack convention example~~ — **done** (TUTORIAL §3). §2.1.
+6. ~~`for 5 [body]` example~~ — **done** (HOWTO §"Iterate with
+   `for`"). §2.2.
+7. ~~`fold` arg-order example~~ — **done** (HOWTO §"Work with
+   lists"). §2.3.
+8. `aql help` examples must be hand-authored — **still open**.
    §5.2, §9.5.
-9. README's `go install` command must work against a fresh clone.
-   §1.1.
+9. README's `go install` command must work against a fresh clone —
+   **still open**. §1.1.
 
 **P1 — runtime/parser correctness:**
 
-10. Forward `if` dispatch picks the wrong branch. §6.2.
-11. Engine panic on dot-access in merge-body shapes — recover and
-    surface a typed error. §3.3.
-12. `Options` as parameter type breaks dispatch. §4.1.
-13. `def name [list-literal]` should preserve the list value or
-    warn clearly. §7.1.
+10. Forward `if` dispatch picks the wrong branch — **still
+    open**, sharper diagnosis in §6.2.
+11. ~~Engine panic on dot-access in merge-body shapes~~ — **not
+    reproducible** in `f7247dd`; recommendation to add a top-level
+    `recover()` still stands.
+12. `Options` as parameter type breaks dispatch — **still open**.
+    §4.1.
+13. ~~`def name [list-literal]` should preserve the list value~~ —
+    **done** (commits `65cb341`, `c567af4`). §7.1.
 
 **P2 — DX improvements:**
 
 14. When a fn dispatch fails on a forward-collected `word` arg,
-    suggest `end`. §6.1.
+    suggest `end` — **still open**. §6.1.
 15. When `def name foo` binds to the literal word, suggest
-    `def name (foo)`. §5.3.
-16. Error positions should point to the call site, not the last
-    similar-shaped body. §3.5.
-17. `aql check` should stop producing 262 errors on a passing file.
-    §4.3, §9.6.
-18. Add `ord`/`chr` and a real `hash`/`xxhash`. §9.8, §9.9.
-19. Subtype instance printing in declaration order. §9.7.
+    `def name (foo)` — **still open** at the error level (HOWTO
+    now teaches the parens form). §5.3.
+16. Error positions should point to the call site — **still open**.
+    §3.5.
+17. `aql check` should stop producing false positives — **a worse
+    failure now**: the checker can't even start on files that
+    import siblings. §4.3.
+18. Add `ord`/`chr` and a real `hash`/`xxhash` — **still open**.
+    §9.8, §9.9.
+19. Subtype instance printing in declaration order — **still open**.
+    §9.7.
 20. `printstr` should consume its argument or document that it
-    doesn't. §9.1.
+    doesn't — **still open**. §9.1.
 
 **P3 — language-level wishes:**
 
-21. A constructable mutable Array, so bit arrays and similar can
-    be packed instead of sparse-mapped. §7.2.
-22. Field declarations that combine type and default value cleanly
-    for nested Objects. §7.3.
-23. `var [[i] body]` as the documented stack-pop pattern in
-    iteration. §5.4.
+21. Constructable mutable Array — **still open**. §7.2.
+22. Field declarations combining type and default value for nested
+    Objects — **partial**; the `field: (make NestedType {})` form
+    works but isn't taught. §7.3.
+23. ~~`var [[i] body]` as the documented stack-pop pattern~~ —
+    **done** (HOWTO §"Use scoped variables"). §5.4.
+
+### New issues discovered during the rewrite
+
+These came up while exercising the *fixed* features and shipping
+the cleaner version of the library. They weren't in the original
+report.
+
+**P1 — runtime correctness:**
+
+N1. **`aql check` fails on every import of a sibling file.** The
+    error is `import: module "" not found (searched .aql//)`. The
+    same file runs cleanly. Without `--soft` or a fix, `aql check`
+    can't be used in CI for any module that has internal structure.
+    §4.3.
+N2. **`each [body]` requires the body to push a value.** Mutating
+    loops (where the body's purpose is the side effect, not the
+    output) have to push a sentinel `0` to satisfy this:
+    ```aql
+    def _ ((bf item indices-for) each [
+      bits swap bit-mark end
+      0                                   # only here to keep `each` happy
+    ])
+    ```
+    A `for` body or a dedicated `do-each` (no-output) word would
+    drop this clutter. §7.4.
+N3. **`if` in mixed forms still picks the wrong branch.** §6.2.
+    Worth re-emphasising because it's the costliest remaining
+    issue — three rewrites of `bloom-merge` before the
+    full-forward form clicked.
+
+**P2 — DX:**
+
+N4. **`aql help` advertises top-level math/`set`/etc. words
+    without noting their module requirement.** `aql help log` shows
+    `Requires: "aql:math" import` but doesn't say `log` becomes
+    `math.log`. §2.6.
+N5. **No path to a runnable single-file library.** `bloom.aql`
+    can't `aql bloom.aql`-be-run-directly because `export` is
+    undefined outside an import. The library has to be entered
+    through `index.aql`. §8.3.
+
+### Done well in `f7247dd`
+
+Worth highlighting:
+- The new HOWTO §"Define an object type with methods" is exactly
+  what was missing in the original report — it teaches the working
+  pattern with a runnable example and explains *why* the inline-
+  method form doesn't work.
+- TUTORIAL §3 "The argument-order rule" is a perfect one-paragraph
+  callout that resolves the most expensive doc bug from the
+  original report.
+- The `def x [...]` → list-as-value change makes practical AQL
+  code much cleaner; the splice-on-demand `word` keyword keeps the
+  old behaviour available for the rare case where it matters.
+- Sub-import of native modules is the single biggest architectural
+  fix. The library this repo ships is a real module now, not a
+  one-file-runnable-script-pretending-to-be-a-module.
 
 ---
 
@@ -1326,3 +2029,45 @@ internalised.
 If the P0/P1 items above land, AQL has a real shot at being a
 pleasant target for the kind of library this report's task asked
 for. As of `12a31e6`, it isn't there yet.
+
+### Update for `f7247dd`
+
+It's substantially there now. The P0 list is essentially done. The
+remaining drag is the trio of:
+
+- `if` mixed-form picking the wrong branch (§6.2),
+- forward precedence eating subsequent words without a hint about
+  `end` (§6.1), and
+- `aql check` being unusable on multi-file modules (§4.3).
+
+All three are localised enough that a small amount of additional
+work would clear them. The library this repo ships — a real
+module with typed function signatures, a clean
+`"./bloom.aql" import end` integration, and a passing `aql:test`
+suite — is something you couldn't write in `12a31e6` and is
+straightforwardly writable in `f7247dd`. That's a big shift.
+
+### Update for `333c420`
+
+Another solid pass. Of the 25 original numbered subsections:
+
+- **17 [fixed]** (was 13 after `f7247dd`): adds §3.4
+  (dispatch-failure body dumps gone — `b669a57`), §3.5 (error
+  positions stamped — `16d58ed`/`6a44d3a`/`e3884ba`/`3c77be6`),
+  and the partial→fixed promotions for §3.4.
+- **4 [partial]** (was 6).
+- **4 [open]**: §1.1 install, §4.1 `Options`, §4.3 `aql check` on
+  multi-file modules, §6.2 `if` mixed-form. Same four as before;
+  none touched.
+- **1 new [partial]**: §7.4 each-must-push-a-value (was open, now
+  partial — `for N [body]` covers the index-less case).
+
+The library this pass is materially cleaner than the second pass:
+`bloom-contains` is one expression, `bloom-encode` is back in via
+`array.where`, the export uses `{BloomFilter}` shorthand.
+
+If the team picks one item to fix next, **§6.2 (`if` mixed-form
+returning the wrong branch)** is the most cost-per-fix:
+single-handler change, repros in three characters, traps every new
+user. The runner-up is **§4.3 (`aql check` on multi-file modules)** —
+without it there's no path to CI gating for any real library.

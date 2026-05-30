@@ -3,4 +3,4 @@ major: 0
 minor: 1
 patch: 0
 main: bloom.aql
-files: [bloom.aql]
+files: [bloom.aql, index.aql]
