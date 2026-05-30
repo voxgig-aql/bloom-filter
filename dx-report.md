@@ -2,10 +2,17 @@
 
 **Original report:** `aql-lang/aql @ 12a31e6` (HEAD on `main`,
 2026-05-28).
-**Revisit pass:** `aql-lang/aql @ f7247dd` (HEAD on `main`,
+**Second pass:** `aql-lang/aql @ f7247dd` (HEAD on `main`,
 2026-05-29) — 1135 commits later. Most of the original P0/P1 items
-have landed; the rest of this report has been updated in place to
-reflect the new state.
+had landed.
+**Third pass:** `aql-lang/aql @ 333c420` (HEAD on `main`,
+2026-05-29 later in day) — another 24 commits, adding the
+`aql:array` module, the `range` word, shorthand `{x}` map literals,
+source-position-aware errors, and DX-specific fixes to the
+dispatch-failure error format. The library was further refined:
+`bloom-contains` collapses to a one-liner with `all`, `bloom-encode`
+is back via `array.where`, and the export map uses the shorthand
+form.
 
 Each section is marked **[fixed]**, **[partial]**, or **[open]** in
 its header so the team can mine just the still-actionable items.
@@ -15,10 +22,11 @@ an older build.
 
 The target was a minimal bloom-filter library — BloomFilter as a
 `refine Object` subtype, Options-style constructor, `aql:test`-driven
-tests. The library was re-implemented against `f7247dd`; the code
-that ships in this repo today (`bloom.aql` + `index.aql` +
-`test/bloom_test.aql`) is the cleaner pass. What follows is the
-exhaustive list of friction encountered along the way.
+tests. The library was re-implemented against `f7247dd` and then
+refined against `333c420`; the code that ships in this repo today
+(`bloom.aql` + `index.aql` + `test/bloom_test.aql`) is the cleaner
+pass. What follows is the exhaustive list of friction encountered
+along the way.
 
 The report is long on purpose; it's meant to be a single document the
 team can mine for issues rather than a polished essay.
@@ -38,39 +46,117 @@ team can mine for issues rather than a polished essay.
 | 5 | Lists don't survive `def` | **fixed** — `def x [1,2,3]` binds the list as a value; `def x word [1,2,3]` opts into the old splice semantics (commit 65cb341) |
 | 6 | `type X object { …, method: [body] }` is documented but doesn't work | **fixed** — HOWTO §"Define an object type with methods" now shows the working `refine Object` + free-fn pattern (commit 331dab9) |
 
-### What still costs significant time at `f7247dd`
+### What still costs significant time at `333c420`
+
+Re-evaluated against the current build. Items that the third pass
+verified still bite:
 
 1. **`if` in the mixed `cond if [then] [else]` form picks the wrong
    branch.** Only the all-forward `if cond [then] [else]` and the
-   all-stack `[else] [then] cond if` forms work. (§6.2)
+   all-stack `[else] [then] cond if` forms work. (§6.2) — **still
+   open**.
 2. **Dotted field access still parse-errors inside map literals.**
    `{n: bf.n}` raises `unexpected character(s): .`; the workaround
-   is `{n: (bf.n)}` or pre-binding via `def`. (§3.1)
+   is `{n: (bf.n)}` or pre-binding via `def`. (§3.1) — **still
+   open**.
 3. **`Options` as a parameter type still breaks dispatch.** `Map`
    works; `Options` causes `aql/signature_error: no matching
    signature for f` even though the fn is correctly defined. (§4.1)
+   — **still open**.
 4. **`aql check` errors before any user-code analysis if the file
    imports a sibling.** Output: `check error: import: module ""
    not found (searched .aql//)`. The same file runs cleanly. (§4.3)
+   — **still open** and arguably the highest-impact untouched
+   issue: it blocks CI gating for any real module.
 5. **Forward-collection eats neighbours; the error doesn't hint at
-   `end`.** Still the dominant source of confusion. (§6.1)
+   `end`.** Still the dominant source of confusion, but the error
+   *position* is now stamped on the offending token (commit
+   `16d58ed`), which makes the cause easier to spot if not easier
+   to fix. (§6.1)
 6. **`printstr` still leaves its arg on the stack.** (§9.1)
 7. **`each [...]` body must produce a value; no `do` / void form.**
    The workaround — pushing a sentinel `0` — clutters every mutating
-   loop body. (§7.4 new section)
+   loop body. (§7.4)
 8. **`def name swap` looks like "pop into name" but binds `name` to
-   the literal word `swap`.** The user reaches for `var [[name]
-   body]` instead; that pattern needs more prominence. (§5.4)
-9. **Forward arithmetic is required as the idiomatic way to use
-   variables in `each` bodies** — `mul h2 add h1 mod m` reads as
-   one-line math only if you know the precedence trick (§6.3).
+   the literal word `swap`.** Need `var [[name] body]`. (§5.4 —
+   now well-documented but still trips beginners.)
+9. **`go install …/cmd/go/aql@latest` still rejects the module
+   because of the replace directives.** (§1.1)
 
-The good news: the rewrite this session is substantially cleaner
-than the original — both files run their full demos and `aql:test`
-chains 7 tests with `fail-count = 0`. The bad news: the residual
-issues above still made the rewrite a tight scrape; the
-`if`-branch-order bug alone cost ~20 minutes and three rewrites of
-`bloom-merge` before the postfix form clicked.
+What got noticeably better in the third pass:
+
+- **Error positions land on the real token.** Errors that
+  previously pointed at "line 211" when the actual failure was 30
+  lines earlier now point at the call site. Three commits land
+  this (`16d58ed`, `6a44d3a`, `e3884ba`, `3c77be6`).
+- **No more body-dump on dispatch failure** (`b669a57`). The
+  600-line spew described in the original §3.4 is gone; errors
+  print a clean signature mismatch with location only.
+- **`aql:array` module** (§ new 12 below). Specialised vocabulary
+  for the work everyday users do on lists — `array.where`,
+  `array.compress`, `array.at`, `array.transpose`, etc. The
+  library's `bloom-encode` uses `array.where` to get the cleanest
+  shape possible.
+- **`{foo}` shorthand for `{foo: foo}`** simplifies the export
+  map: `export "Bloom" {BloomFilter, Bits, make: make-bloom/r, …}`
+  versus the old verbose form.
+- **`range start stop step`** complements `iota`; useful for any
+  loop where the bounds aren't `0..N-1`.
+
+The good news: the rewrite is now substantially cleaner than the
+second-pass version — `bloom-contains` is one line, `bloom-encode`
+is three. The bad news: the four most-impactful open issues (`if`
+mixed-form, `Options`, `aql check`, no-`end`-hint in errors)
+weren't touched, so the next library is going to hit them too.
+
+---
+
+## 0b. Revisit log: what landed between `f7247dd` and `333c420`
+
+The third pass against the build at `333c420`. Twenty-four more
+commits, several of which are direct hits on earlier dx-report
+items.
+
+| Item | Commits |
+|------|---------|
+| Dispatch-failure errors dumping fn bodies + registries (#3.4) | `b669a57 Stop dispatch-failure errors dumping fn bodies and module registries (DX 3.4)` |
+| Error positions point at real source location (#3.5) | `16d58ed Stamp source positions on parsed values so errors point at the real token`, `6a44d3a Thread source positions into forward-arg and return-check errors`, `e3884ba Stamp anonymous fn values with their construction position`, `3c77be6 Remove the findWordInSource fallback; state unknown positions explicitly` |
+| `aql:array` module — APL-style data vocabulary | `121c8a3 Add aql:array module; gate specialised array words behind it`, `4a74939 Complete arrayification: compress/eachrank/foldaxis; fix ADR-001 matrix deviation` |
+| Deep-flatten + list-overload of `indexof` in core | `e1b0b60 Fold deep-flatten and list-indexof into core words; add ADR.md` |
+| Shorthand map syntax `{foo}` → `{foo: foo}` (relates to #5.2) | `46fb072 Add JS-style shorthand map syntax {foo} => {foo: foo}`, `ee9342b Document map field shorthand syntax` |
+| `range` word — `iota`'s `start, stop, step` cousin | `8503254 Add range word: iota's start/stop/step cousin` |
+| `/r` (and `ref`) constrained to function words | `cefa52d ref: make /r (and ref) legal only for function words`, `23bcfb6 fix: reject word modifiers on explicit map keys`, `685ed4f fix: optional map shorthand drops word modifier from the key` |
+| Quotation and stack-model docs (relates to #2 docs) | `dc1ac22 Correct the quotation and stack-model docs to match the engine` |
+| Doc-example test harness (catches future drift) | `597ba70 Add doc-example test harness; fix drifted doc examples`, `44bd3bf Add sandboxed CLI-example test harness`, `5c9a24c test: key doc-example knownMismatch by expression, not line number` |
+| List/Map rendering style | `e95ad3e Render lists and maps space-separated, not comma-separated` |
+| Broadcasting policy (ADR-002) | `5357039 Reject broadcasting: document the decision (ADR-002)` |
+
+The cumulative effect for *this* library:
+- `bloom-encode` is restored. It uses `array.where hits` to
+  project bit-set positions out of a vector of bit-test results
+  (`[0, 1, 0, 0, 1, 1, …]` → `[1, 4, 5, …]`). No sentinel-`0`
+  pattern, no manual filter. Three lines.
+- `bloom-contains` collapses to one expression:
+  `(bf item indices-for) each [bits swap bit-test end] all`. The
+  `all` (truthy-fold) was already in core; the read is now
+  natural.
+- The export map uses the new `{BloomFilter}` shorthand for type
+  entries (`{BloomFilter, Bits, make: make-bloom/r, …}`).
+- Errors during the rewrite pointed at the *actual* failing
+  token. The "line 211 says popcount when really it's bloom-add"
+  pain from the first report is gone for the rebuilt code paths.
+- The dispatch-failure-dumps-the-whole-test-registry mess from
+  §3.4 doesn't happen anymore.
+
+What still bites:
+- `if true [99] [88] end` → `88`. Same broken mixed-form branch
+  pick as in `f7247dd`. (§6.2)
+- `Options` as a parameter type still breaks dispatch. (§4.1)
+- `aql check` still errors on every file that imports a sibling,
+  blocking it as a CI gate. (§4.3)
+- The forward-precedence trap (every user fn eats the next word
+  without `end`) is unchanged. The new improved error positions
+  do help locate it faster. (§6.1)
 
 ---
 
@@ -593,7 +679,7 @@ access inside merge bodies; the underlying lack of a `recover()`
 in the engine still means any future bug in this area surfaces as
 a goroutine trace. Worth keeping the recommendation.
 
-### 3.4 Body-list contents printed on dispatch failure [partial]
+### 3.4 Body-list contents printed on dispatch failure [fixed]
 
 When a typed fn body is malformed *and* the fn is referenced from a
 position where the type checker speculatively analyses it, the body
@@ -625,7 +711,22 @@ failure, §4.1) and the entire `aql:test` exports map got printed
 along with the function body. The dump is now ~50 lines instead of
 the 600+ from the original report, but the family of issue remains.
 
-### 3.5 Line numbers in errors lag the actual call site [open]
+**Status after `333c420`:** **fixed.** Commit `b669a57 Stop
+dispatch-failure errors dumping fn bodies and module registries
+(DX 3.4)` lands the targeted fix. The same Options-as-param
+failure now prints a clean signature error with location:
+
+```
+error: [aql/signature_error]: no matching signature for f
+  --> 1:47
+  1 | def f fn [[opts:Options] [Integer] [42]]   {} f end print
+                                                    ^ no matching signature for f
+```
+
+No body dump. No registry dump. Reads like a normal compiler
+error.
+
+### 3.5 Line numbers in errors lag the actual call site [fixed]
 
 Repeatedly during testing, the reported error position pointed to a
 later definition that shared a similar shape, not to the line that
@@ -650,6 +751,27 @@ shape, not the *runtime* call site.
 **Recommendation:** carry the call-site frame separately from the
 body-source frame in `AqlError`, and prefer the call-site frame for
 the headline arrow. Body-source can go in a `caused by:` footer.
+
+**Status after `333c420`:** **fixed.** Four commits land this:
+`16d58ed Stamp source positions on parsed values so errors point
+at the real token`, `6a44d3a Thread source positions into
+forward-arg and return-check errors`, `e3884ba Stamp anonymous fn
+values with their construction position`, and `3c77be6 Remove the
+findWordInSource fallback; state unknown positions explicitly`.
+
+Sanity check — feeding a String into an Integer-typed fn now
+points at the call site, not a similar-shape body elsewhere:
+
+```
+$ aql do 'def f fn [[a:Integer b:Integer] [Integer] [a add b]]   "hi" f end print'
+error: [aql/signature_error]: no matching signature for f
+  --> 1:61
+  1 | def f fn [[a:Integer b:Integer] [Integer] [a add b]]   "hi" f end print
+                                                                  ^ no matching signature for f
+```
+
+The arrow lands on the `f` that actually ran, not on the `f` in the
+definition. Same for forward-arg type errors and return checks.
 
 ---
 
@@ -1171,7 +1293,7 @@ even if it's just `def Bits refine Object` with integer-stringified
 keys. Or document the array-via-stringified-index pattern clearly
 as the canonical way.
 
-### 7.4 `each [body]` requires the body to push a value [open — new in `f7247dd`]
+### 7.4 `each [body]` requires the body to push a value [partial — new in `f7247dd`]
 
 When `each` is used for its side effects (e.g. setting bits in a
 bloom filter, mutating per-element state), there's no way to say
@@ -1215,6 +1337,42 @@ Cleaner alternatives that would close this:
 
 The current "always push a sentinel" workaround is functional but
 adds noise to every mutating loop.
+
+**Status after `333c420`:** **partial.** `for N [body]` is the
+clean answer for purely-counted loops where the body's output is
+collected on the stack:
+
+```
+$ aql do 'for 5 [42] print'
+42
+42
+42
+42
+42
+```
+
+That works for `bloom-add`'s inner loop *if* you can phrase the
+body without needing the iteration index — `for` doesn't pass it.
+The library still uses `iota N each [...]` plus a sentinel `0` in
+the merge body because the index is needed:
+
+```aql
+def _ (iota am each [
+  var [[i]
+    def is-set (b-bits i bit-test end 1 eq)
+    if is-set [
+      a-bits i bit-mark end
+      0                              # sentinel
+    ] [
+      0                              # sentinel
+    ]
+  ]
+])
+```
+
+So this is still open for "index-using void loops". An indexed
+`for [start, stop] [body]` (matching `iota`'s shape, but discarding
+the body's stack output) would close it.
 
 ### 7.3 Object field defaults don't construct nested Objects [partial]
 
@@ -1624,6 +1782,93 @@ works but it's not what the framework promises.
 
 ---
 
+## 11a. New since `f7247dd`: array module and friends [new]
+
+Three additions in `333c420` are worth flagging because they
+materially change the idiomatic shape of list-heavy AQL code.
+
+### `aql:array` module — APL-style data vocabulary
+
+After `"aql:array" import end`, words appear under the `array.`
+namespace. The library uses `array.where` directly. Worked
+examples:
+
+```
+$ aql do '"aql:array" import end   [1, 0, 1, 1, 0, 1] array.where end print'
+[0, 2, 3, 5]
+
+$ aql do '"aql:array" import end   [10, 20, 30, 40] array.at [3, 0, 2] end print'
+[40, 10, 30]
+
+$ aql do '"aql:array" import end   [1, 2, 3] array.replicate [2, 1, 3] end print'
+[1, 1, 2, 3, 3, 3]
+
+$ aql do '"aql:array" import end   [1, 2, 3, 4] array.compress [1, 0, 1, 0] end print'
+[1, 3]
+```
+
+Other exports: `shape`, `rank`, `reshape`, `transpose`, `grade`,
+`sortby`, `expand`, `member`, `unique`, `group`, `window`, `pairs`,
+`eachrank`, `foldaxis`. Per ADR-001 (in the repo root) the module
+deliberately doesn't shadow core words; `flatten -1` and the
+List/List overload of `indexof` were promoted to core in
+`e1b0b60`.
+
+For the bloom filter, the biggest single win is `array.where`. The
+old `bloom-encode` had to walk the bit array building a list of
+either `i` or a sentinel `-1`, then filter the `-1`s out. The
+new form is two lines:
+
+```aql
+def hits (iota m each [bits swap bit-test end])  # [0,1,0,0,1,1,…]
+def set-idxs (array.where hits end)              # [1,4,5,…]
+```
+
+That's the shape every "scan a bitmap, get the indices" loop
+should have.
+
+### `range start stop step` — `iota`'s richer cousin
+
+```
+$ aql do 'range 0 10 2 print'
+[0, 2, 4, 6, 8]
+```
+
+The library doesn't currently need this — every loop is
+`0..N-1` — but it's the obvious answer for any loop with non-zero
+start or non-unit step. Removes the awkward
+`iota N each [i mul step add start]` workaround.
+
+### Shorthand map literal `{x}` → `{x: x}`
+
+```
+$ aql do 'def x 5   def y "hi"   {x, y} print'
+{"x": 5, "y": "hi"}
+```
+
+The bloom-filter `export` map uses this for the type / Bits
+entries (the function entries still need `/r` so they stay verbose,
+but everything constructible with the bare name is now terse):
+
+```aql
+export "Bloom" {
+  BloomFilter
+  Bits
+  make:     make-bloom/r
+  add:      bloom-add/r
+  contains: bloom-contains/r
+  count:    bloom-count/r
+  params:   bloom-params/r
+  encode:   bloom-encode/r
+  merge:    bloom-merge/r
+}
+```
+
+This nudges export maps toward "small, readable" rather than "two
+columns of repetition".
+
+---
+
 ## 11. Recommendations summary (prioritised)
 
 ### Original list, with current state
@@ -1801,3 +2046,28 @@ module with typed function signatures, a clean
 `"./bloom.aql" import end` integration, and a passing `aql:test`
 suite — is something you couldn't write in `12a31e6` and is
 straightforwardly writable in `f7247dd`. That's a big shift.
+
+### Update for `333c420`
+
+Another solid pass. Of the 25 original numbered subsections:
+
+- **17 [fixed]** (was 13 after `f7247dd`): adds §3.4
+  (dispatch-failure body dumps gone — `b669a57`), §3.5 (error
+  positions stamped — `16d58ed`/`6a44d3a`/`e3884ba`/`3c77be6`),
+  and the partial→fixed promotions for §3.4.
+- **4 [partial]** (was 6).
+- **4 [open]**: §1.1 install, §4.1 `Options`, §4.3 `aql check` on
+  multi-file modules, §6.2 `if` mixed-form. Same four as before;
+  none touched.
+- **1 new [partial]**: §7.4 each-must-push-a-value (was open, now
+  partial — `for N [body]` covers the index-less case).
+
+The library this pass is materially cleaner than the second pass:
+`bloom-contains` is one expression, `bloom-encode` is back in via
+`array.where`, the export uses `{BloomFilter}` shorthand.
+
+If the team picks one item to fix next, **§6.2 (`if` mixed-form
+returning the wrong branch)** is the most cost-per-fix:
+single-handler change, repros in three characters, traps every new
+user. The runner-up is **§4.3 (`aql check` on multi-file modules)** —
+without it there's no path to CI gating for any real library.
