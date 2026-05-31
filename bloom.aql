@@ -153,8 +153,9 @@ def derive-k fn [
   ]
 ]
 
-# `opts:Options` still breaks dispatch in this build (Map works);
-# tracked in dx-report.md §4.1.
+# `opts:Options` now dispatches as of aql 5b983b6 (dx-report.md
+# §4.1); `Map` is kept here since the body only does keyed `get`s and
+# the two are interchangeable at the call site.
 def make-bloom fn [
   [opts:Map] [BloomFilter] [
     def n-val (opts "n" get)
@@ -211,9 +212,10 @@ def popcount fn [
 # Swamidass–Baldi: n_est = -(m/k) * ln(1 - X/m). Branch on the
 # saturated case (every bit set) up front so we don't take log(0).
 #
-# `if` is invoked in its full-forward form `if cond [then] [else]` —
-# the mixed `cond if [then] [else]` form picks the wrong branch in
-# this build (dx-report §6.2).
+# `if` is invoked in its full-forward form `if cond [then] [else]`.
+# In aql 5b983b6 `if` is effectively forward-only: the mixed
+# `cond if [then] [else]` form picks the wrong branch and the postfix
+# `[else] [then] cond if` form no longer dispatches (dx-report §6.2).
 def bloom-count fn [
   [bf:BloomFilter] [Integer] [
     def x (bf popcount end)
