@@ -153,10 +153,8 @@ def derive-k fn [
   ]
 ]
 
-# `opts:Options` still breaks dispatch in this build (Map works);
-# tracked in dx-report.md §4.1.
 def make-bloom fn [
-  [opts:Map] [BloomFilter] [
+  [opts:Options] [BloomFilter] [
     def n-val (opts "n" get)
     def p-val (opts "p" get)
     def m-val (n-val p-val derive-m)
