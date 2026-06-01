@@ -1,0 +1,76 @@
+name: tests
+
+# The bloom-filter module is written in AQL, so CI has to build the
+# `aql` interpreter from source before it can run anything. The
+# language has no tagged release yet and has shipped breaking changes
+# between commits, so we pin AQL_REF to the exact commit this module is
+# verified against. Bump it (and re-run the suites locally) when
+# adopting a newer aql.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # aql-lang/aql @ main, 2026-05-31. See dx-report.md for the
+  # per-commit DX history this pin tracks.
+  AQL_REF: 5b983b6c0c9f59908ec6d53403c0880b241d64c6
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out bloom-filter
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      # The compiled binary only depends on AQL_REF (and the OS), so a
+      # hit here lets us skip the clone + build entirely.
+      - name: Cache aql binary
+        id: cache-aql
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin/aql
+          key: aql-${{ env.AQL_REF }}-${{ runner.os }}
+
+      - name: Check out aql source
+        if: steps.cache-aql.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: aql-lang/aql
+          ref: ${{ env.AQL_REF }}
+          path: aql-src
+
+      # The documented `go install …/cmd/go/aql@latest` cannot work
+      # while cmd/go/go.mod carries replace directives (dx-report
+      # §1.1), so we build from the clone with -mod=mod instead.
+      - name: Build aql
+        if: steps.cache-aql.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          cd aql-src/cmd/go
+          GOFLAGS=-mod=mod go build \
+            -ldflags "-X github.com/aql-lang/aql/cmd/go.Version=${AQL_REF}" \
+            -o "$HOME/.local/bin/aql" ./aql
+
+      - name: Add aql to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Report aql version
+        run: aql -version
+
+      # Each suite ends with `0 test.fail-count end assert.equal`, so a
+      # failure makes aql exit non-zero and fails the step.
+      - name: Unit tests
+        run: aql test/bloom_test.aql
+
+      - name: Property tests
+        run: aql test/bloom_prop_test.aql
+
+      - name: Smoke demo
+        run: aql index.aql

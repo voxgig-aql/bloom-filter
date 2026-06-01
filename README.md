@@ -69,9 +69,12 @@ aql test/bloom_test.aql        # unit tests
 aql test/bloom_prop_test.aql   # property tests
 ```
 
-Continuous integration builds aql from a pinned commit and runs all
-three on every push and pull request
-([`.github/workflows/test.yml`](.github/workflows/test.yml)).
+A GitHub Actions workflow ([`ci/test.yml`](ci/test.yml)) builds aql from
+a pinned commit and runs all three suites on every push and pull
+request. It is staged under `ci/` rather than `.github/workflows/`
+because the token that created this branch lacked GitHub `workflow`
+scope; move it into place to activate it — see
+[`ci/README.md`](ci/README.md).
 
 ## License
 
