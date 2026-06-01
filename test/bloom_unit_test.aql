@@ -1,7 +1,11 @@
-# bloom-filter tests using aql:test's imperative API.
+# bloom-filter direct unit tests using aql:test's imperative API.
+#
+# The sibling file `test/bloom_unit_spec.aql` covers the same kind of
+# example-based checks through the declarative spec surface
+# (`test.spec` / `test.case` / `test.run-spec`).
 #
 # Run:
-#   aql test/bloom_test.aql
+#   aql test/bloom_unit_test.aql
 
 
 "aql:test"   import end

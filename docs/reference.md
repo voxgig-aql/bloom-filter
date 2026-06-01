@@ -171,8 +171,7 @@ On a precondition violation `merge` raises a catchable error —
 `undefined_word: bloom-merge-requires-equal-m` (or `…-equal-k`). Trap
 it with `do […] error […]` or `assert.throws`. (The unusual error
 class is a consequence of aql 5b983b6 removing custom error raising;
-see [Explanation §Raising errors](explanation.md#raising-errors-in-aql-5b983b6)
-and `dx-report.md` §9.10.)
+see [Explanation §Raising errors](explanation.md#raising-errors-in-aql-5b983b6).)
 
 ### `Bloom.encode`
 

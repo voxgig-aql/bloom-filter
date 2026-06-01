@@ -49,15 +49,18 @@ Full details, including the calling convention (every call ends with
 ## Project layout
 
 ```
-bloom.aql                 the library (the Bloom namespace)
-smoke.aql                 smoke demo / worked example
-test/bloom_test.aql       example-based unit tests
-test/bloom_prop_spec.aql  property-based tests — declarative spec format
-test/bloom_pbt.aql        property-based tests — direct test.check-prop form
-docs/                     Diátaxis documentation (above)
-dx-report.md              developer-experience log against aql commits
-dx-remaining.md           focused list of open / partial DX items
+bloom.aql                  the library (the Bloom namespace)
+test/bloom_unit_test.aql   example-based unit tests — direct (test.test)
+test/bloom_unit_spec.aql   example-based unit tests — declarative spec format
+test/bloom_prop_test.aql   property-based tests — direct (test.check-prop)
+test/bloom_prop_spec.aql   property-based tests — declarative spec format
+test/bloom_smoke_test.aql  end-to-end smoke run over every public word
+docs/                      Diátaxis documentation (above)
 ```
+
+Test files follow a consistent naming convention: `_test.aql` for
+direct tests (unit or property), `_spec.aql` for declarative specs (unit
+or property).
 
 ## Running it
 
@@ -66,10 +69,11 @@ Build the `aql` interpreter, then run any script or test — see
 [Run the tests](docs/how-to.md#run-the-tests):
 
 ```bash
-aql smoke.aql                  # smoke demo
-aql test/bloom_test.aql        # unit tests
+aql test/bloom_unit_test.aql   # unit tests — direct
+aql test/bloom_unit_spec.aql   # unit tests — declarative spec format
+aql test/bloom_prop_test.aql   # property tests — direct
 aql test/bloom_prop_spec.aql   # property tests — declarative spec format
-aql test/bloom_pbt.aql         # property tests — direct test.check-prop form
+aql test/bloom_smoke_test.aql  # end-to-end smoke run
 ```
 
 A GitHub Actions workflow ([`ci/test.yml`](ci/test.yml)) builds aql from

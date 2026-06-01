@@ -9,7 +9,7 @@
 # — which `test.run-property` then runs (at the default 100 iterations).
 # Specs are values, so we assemble them into a list and run the list.
 #
-# The sibling file `test/bloom_pbt.aql` covers the SAME idea through the
+# The sibling file `test/bloom_prop_test.aql` covers the SAME idea through the
 # other surface — the imperative `test.check-prop` driver, called
 # directly with explicit run/seed/shrink counts. Keeping both is on
 # purpose: together they exercise both halves of the framework. The
@@ -23,8 +23,7 @@
 # and must return a Boolean. A single false (or an error) fails the
 # property and reports the offending input.
 #
-# `if` is written all-forward (`if cond [then] [else]`) throughout; see
-# dx-report.md §6.2.
+# `if` is written all-forward (`if cond [then] [else]`) throughout.
 #
 # Run:
 #   aql test/bloom_prop_spec.aql

@@ -22,7 +22,7 @@ bloom filter is; if not, start with the [Tutorial](tutorial.md). For the
 
 The module is written in AQL, which has no tagged release yet, so build
 the interpreter from source (the documented `go install …/aql@latest`
-fails on the repo's replace directives — see `dx-report.md` §1.1):
+fails on the repo's replace directives):
 
 ```bash
 git clone https://github.com/aql-lang/aql /tmp/aql-source
@@ -39,7 +39,7 @@ aql -version
 Run any script in this repo by passing its path:
 
 ```bash
-aql smoke.aql
+aql test/bloom_smoke_test.aql
 ```
 
 This module is verified against aql commit `5b983b6`; the CI workflow
@@ -191,27 +191,38 @@ def bf ({n: 1000, p: 0.01} Bloom.make end)
 ```
 
 Every `Bloom.*` call must end with `end` (or be wrapped in parens) so
-the word doesn't swallow the following token. `smoke.aql` is a complete
-worked example you can copy from.
+the word doesn't swallow the following token. `test/bloom_smoke_test.aql`
+is a complete worked example you can copy from.
 
 ---
 
 ## Run the tests
 
-Four suites ship with the module. Run them with `aql`:
+Five suites ship with the module. Run them with `aql`:
 
 ```bash
-aql test/bloom_test.aql        # example-based unit tests (aql:test)
+aql test/bloom_unit_test.aql   # example-based unit tests — direct (aql:test)
+aql test/bloom_unit_spec.aql   # example-based unit tests — declarative spec format
+aql test/bloom_prop_test.aql   # property tests — direct test.check-prop form
 aql test/bloom_prop_spec.aql   # property tests — declarative spec format
-aql test/bloom_pbt.aql         # property tests — direct test.check-prop form
-aql smoke.aql                  # smoke demo / end-to-end walk-through
+aql test/bloom_smoke_test.aql  # end-to-end walk-through over every public word
 ```
 
-The two property suites are intentionally separate: they exercise the
-two ways `aql:test` drives property checks. `bloom_prop_spec.aql` builds
+The file names follow a consistent convention: `_test.aql` is a direct
+suite (assertions or `test.check-prop` calls written out in code), and
+`_spec.aql` is a declarative suite (cases or properties built as data
+and handed to a runner). Both the unit and property layers ship in both
+forms.
+
+The two unit suites express the same example checks two ways:
+`bloom_unit_test.aql` asserts imperatively with `test.test` /
+`assert.equal`, while `bloom_unit_spec.aql` builds each check as a
+`TestSpec` (`test.spec` / `test.case`) that `test.run-spec` dispatches.
+
+The two property suites are likewise split: `bloom_prop_spec.aql` builds
 each property as a declarative `PropertySpec` (`test.prop`) and runs it
 with `test.run-property` at the default 100 iterations — clean, but the
-run count is fixed. `bloom_pbt.aql` calls the imperative
+run count is fixed. `bloom_prop_test.aql` calls the imperative
 `test.check-prop` driver directly, passing `runs`/`seed`/`max-shrinks`
 explicitly, which is why it carries the expensive O(m) properties
 (merge, encode) at a smaller run budget.

@@ -1,0 +1,109 @@
+# Example-based unit tests for bloom-filter — DECLARATIVE SPEC FORMAT.
+#
+# This file is the spec-format sibling of `test/bloom_unit_test.aql`.
+# Where that file drives example checks imperatively (`test.test` with
+# `assert.equal`), this one expresses them as *data*: a list of
+# `TestSpec` values that `test.run-spec` walks and dispatches. It mirrors
+# how `test/bloom_prop_spec.aql` is the spec-format sibling of the
+# direct-code `test/bloom_prop_test.aql`.
+#
+# A TestSpec is `{name, subject, cases, subs}`:
+#   - `subject` is the word to exercise, named as a dotted String
+#     (e.g. "Bloom.params"); the runner splits it into `get` chains and
+#     dispatches the resolved word.
+#   - each case is `{name, in, out}`: the `in` list is spread onto the
+#     stack (deepest element first), the subject is dispatched, and the
+#     top-of-stack result is deep-compared (`deq`) against `out`.
+#
+# Because `in` elements are ordinary values, we build the BloomFilter a
+# case needs inline — `Bloom.add` returns the (mutated) filter, so a
+# pre-populated filter is just `(... Bloom.make end) key Bloom.add end`.
+# Only the exported `Bloom` words are used as subjects; no local helpers.
+#
+# Run:
+#   aql test/bloom_unit_spec.aql
+
+
+"aql:test"    import end
+"./bloom.aql" import end
+
+
+# --- the spec suite, built as data ---------------------------------
+#
+# Each entry is a TestSpec value (no sub-specs). All inputs are built
+# from {n: 1000, p: 0.01}, whose derived params are m = 9586, k = 7.
+
+def specs [
+
+  # params reports the constructor inputs plus the derived (m, k).
+  {
+    name:    "params"
+    subject: "Bloom.params"
+    cases: [
+      {
+        name: "n1000-p0.01"
+        in:   [ ({n: 1000, p: 0.01} Bloom.make end) ]
+        out:  {n: 1000, p: 0.01, m: 9586, k: 7}
+      }
+      {
+        name: "n500-p0.01"
+        in:   [ ({n: 500, p: 0.01} Bloom.make end) ]
+        out:  {n: 500, p: 0.01, m: 4793, k: 7}
+      }
+    ]
+    subs: []
+  }
+
+  # contains: no false negatives for a just-added key; a fresh filter
+  # (or an absent key) reports false.
+  {
+    name:    "contains"
+    subject: "Bloom.contains"
+    cases: [
+      {
+        name: "added-key-found"
+        in:   [ (({n: 1000, p: 0.01} Bloom.make end) "hello" Bloom.add end) "hello" ]
+        out:  true
+      }
+      {
+        name: "absent-key-not-found"
+        in:   [ ({n: 1000, p: 0.01} Bloom.make end) "ghost" ]
+        out:  false
+      }
+    ]
+    subs: []
+  }
+
+  # count of an empty filter is exactly 0 (no bits set → estimate 0).
+  {
+    name:    "count"
+    subject: "Bloom.count"
+    cases: [
+      {
+        name: "empty-is-zero"
+        in:   [ ({n: 1000, p: 0.01} Bloom.make end) ]
+        out:  0
+      }
+    ]
+    subs: []
+  }
+
+]
+
+
+# --- run every spec ------------------------------------------------
+
+def _ (specs each [
+  var [[s]
+    s test.run-spec end
+    0
+  ]
+])
+
+
+# --- summary -------------------------------------------------------
+
+"---" print
+"fail count: " print test.fail-count end print
+0 test.fail-count end assert.equal end
+"all green" print

@@ -153,9 +153,8 @@ def derive-k fn [
   ]
 ]
 
-# `opts:Options` dispatches as of aql 5b983b6 (dx-report.md §4.1);
-# earlier builds forced `Map` here because an Options-typed parameter
-# broke dispatch.
+# `opts:Options` dispatches as of aql 5b983b6; earlier builds forced
+# `Map` here because an Options-typed parameter broke dispatch.
 def make-bloom fn [
   [opts:Options] [BloomFilter] [
     def n-val (opts "n" get)
@@ -215,7 +214,7 @@ def popcount fn [
 # `if` is invoked in its full-forward form `if cond [then] [else]`.
 # The all-forward and all-stack forms both select the right branch;
 # only the mixed `cond if [then] [else]` form picks the wrong one, so
-# we keep `if` and its operands on the same side (dx-report §6.2).
+# we keep `if` and its operands on the same side.
 def bloom-count fn [
   [bf:BloomFilter] [Integer] [
     def x (bf popcount end)
@@ -269,7 +268,7 @@ def bloom-encode fn [
 # (n, p). On a mismatch we raise. Note: aql 5b983b6 redefined `error`
 # as an error-*handler* combinator (`do [risky] error [handler]`) and
 # removed the old string-raising form, with no replacement word for
-# raising a custom message (dx-report §9.10). The catchable idiom that
+# raising a custom message. The catchable idiom that
 # remains is to dispatch a descriptively-named word that isn't defined;
 # the raised `undefined_word: <name>` carries the failed precondition
 # as its text, and callers can trap it with `do […] error […]` or

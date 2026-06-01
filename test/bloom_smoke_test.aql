@@ -1,7 +1,11 @@
-# Smoke demo for the bloom-filter module. Imports the library and
-# walks through every public word.
+# Smoke test for the bloom-filter module. Imports the library and
+# walks through every public word — a successful end-to-end run (no
+# errors) is the pass condition.
+#
+# Run:
+#   aql test/bloom_smoke_test.aql
 
-"./bloom.aql" import end
+"../bloom.aql" import end
 
 "--- bloom-filter smoke demo ---" print
 

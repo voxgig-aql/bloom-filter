@@ -20,7 +20,7 @@
 #           must return a Boolean.
 #
 # Run:
-#   aql test/bloom_pbt.aql
+#   aql test/bloom_prop_test.aql
 
 
 "aql:test"   import end
