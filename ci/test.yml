@@ -80,3 +80,36 @@ jobs:
 
       - name: Smoke test
         run: aql test/bloom_smoke_test.aql
+
+  # Lightweight guard for the agent-skill packaging (no aql needed). The
+  # plugin must bundle its own copy of the skill — plugins can't point at
+  # an external .claude/skills dir — so two copies exist and can drift.
+  consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out bloom-filter
+        uses: actions/checkout@v4
+
+      - name: SKILL.md copies are in sync
+        run: |
+          canonical=.claude/skills/bloom-filter-aql/SKILL.md
+          bundled=plugins/bloom-filter-aql/skills/bloom-filter-aql/SKILL.md
+          if ! diff -u "$canonical" "$bundled"; then
+            echo "::error file=$bundled::Plugin skill has drifted from $canonical"
+            echo "Fix by copying the canonical skill over the bundled one:"
+            echo "  cp $canonical $bundled"
+            exit 1
+          fi
+          echo "SKILL.md copies are identical."
+
+      - name: Plugin manifests are valid JSON
+        run: |
+          for j in .claude-plugin/marketplace.json \
+                   plugins/bloom-filter-aql/.claude-plugin/plugin.json; do
+            if python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$j"; then
+              echo "ok: $j"
+            else
+              echo "::error file=$j::invalid JSON"
+              exit 1
+            fi
+          done

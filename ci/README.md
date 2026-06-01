@@ -2,8 +2,10 @@
 
 `test.yml` is the GitHub Actions workflow for this module. It builds the
 `aql` interpreter from a pinned `aql-lang/aql` commit (cached) and runs
-the unit suite, property suite, and smoke demo on every push and pull
-request.
+the unit suite, property suite, and smoke test on every push and pull
+request. A second, lightweight `consistency` job (no `aql` needed)
+checks that the bundled agent skill hasn't drifted from its canonical
+copy and that the plugin manifests are valid JSON.
 
 **It lives here, not in `.github/workflows/`, only because the
 automation token that created this branch lacked the GitHub `workflow`
