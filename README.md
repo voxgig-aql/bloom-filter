@@ -52,9 +52,11 @@ Full details, including the calling convention (every call ends with
 bloom.aql                 the library (the Bloom namespace)
 index.aql                 smoke demo / worked example
 test/bloom_test.aql       example-based unit tests
-test/bloom_prop_test.aql  property-based tests (PropertySpec format)
+test/bloom_prop_test.aql  property-based tests (PropertySpec spec format)
+test/bloom_pbt.aql        property-based tests (additional invariants)
 docs/                     Diátaxis documentation (above)
 dx-report.md              developer-experience log against aql commits
+dx-remaining.md           focused list of open / partial DX items
 ```
 
 ## Running it
@@ -66,15 +68,15 @@ Build the `aql` interpreter, then run any script or test — see
 ```bash
 aql index.aql                  # smoke demo
 aql test/bloom_test.aql        # unit tests
-aql test/bloom_prop_test.aql   # property tests
+aql test/bloom_prop_test.aql   # property tests (spec format)
+aql test/bloom_pbt.aql         # property tests (PBT)
 ```
 
 A GitHub Actions workflow ([`ci/test.yml`](ci/test.yml)) builds aql from
-a pinned commit and runs all three suites on every push and pull
-request. It is staged under `ci/` rather than `.github/workflows/`
-because the token that created this branch lacked GitHub `workflow`
-scope; move it into place to activate it — see
-[`ci/README.md`](ci/README.md).
+a pinned commit and runs every suite on each push and pull request. It
+is staged under `ci/` rather than `.github/workflows/` because the token
+that created this branch lacked GitHub `workflow` scope; move it into
+place to activate it — see [`ci/README.md`](ci/README.md).
 
 ## License
 

@@ -174,14 +174,15 @@ produce a *catchable* failure whose text names the problem. The full
 story is in `dx-report.md` §9.10. If a future aql restores custom
 raising, this is the first thing to clean up.
 
-### `if` is forward-only
+### `if` is always written all-forward
 
-Throughout `bloom.aql`, `if` is always written `if cond [then] [else]`
-with every argument forward of the word. On aql 5b983b6 that is the only
-form that selects the correct branch — the mixed `cond if […] […]` form
-silently takes the else branch and the postfix form no longer
-dispatches. See `dx-report.md` §6.2. This constrains how conditionals
-read but is otherwise invisible to callers.
+Throughout `bloom.aql`, `if` is written `if cond [then] [else]` with
+every argument forward of the word. On aql 5b983b6 both the all-forward
+and the all-stack forms select the correct branch; only the *mixed*
+form, with `if` between the condition and its branches
+(`cond if […] […]`), silently takes the else branch. Keeping `if` and
+its operands on the same side sidesteps that trap. See `dx-report.md`
+§6.2. This is otherwise invisible to callers.
 
 ---
 
