@@ -12,13 +12,13 @@
 # BloomFilter is a `refine Object` subtype. Bit storage is a nested
 # `Bits` Object whose fields are stringified bit indices set to 1.
 #
-# Imported via `"./bloom.aql" import end` from another script; that
+# Imported via `import "./bloom.aql"` from another script; that
 # script doesn't need to pre-import `aql:math` because the library
 # imports it itself.
 
 
-"aql:math"  import end
-"aql:array" import end
+import "aql:math"
+import "aql:array"
 
 
 # --- types ----------------------------------------------------------

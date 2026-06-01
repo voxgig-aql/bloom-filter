@@ -13,7 +13,7 @@ The module exports a single namespace, `Bloom`, plus two types. Import
 it with:
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql"
 ```
 
 A consuming script does **not** need to import `aql:math` or

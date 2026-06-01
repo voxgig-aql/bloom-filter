@@ -23,10 +23,10 @@
 #   aql test/bloom_prop_test.aql
 
 
-"aql:test"   import end
-"aql:array"  import end
-"aql:math"   import end
-"./bloom.aql" import end
+import "aql:test"
+import "aql:array"
+import "aql:math"
+import "./bloom.aql"
 
 
 # Shared character set for generated keys.

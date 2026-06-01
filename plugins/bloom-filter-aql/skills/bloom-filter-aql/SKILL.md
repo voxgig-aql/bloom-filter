@@ -1,6 +1,6 @@
 ---
 name: bloom-filter-aql
-description: Use when writing or editing AQL code that calls the Bloom bloom-filter library — Bloom.make / Bloom.add / Bloom.contains / Bloom.count / Bloom.params / Bloom.merge / Bloom.encode, or any file that does `"./bloom.aql" import`. Provides the exact AQL calling convention (which is not C/Python/JS), the API with mutation and probabilistic semantics, verified copy-paste idioms, and fixes for the mistakes agents most often make (foreign call syntax like `bf.contains(x)`, missing `end` terminators, assuming `add` returns a new filter).
+description: Use when writing or editing AQL code that calls the Bloom bloom-filter library — Bloom.make / Bloom.add / Bloom.contains / Bloom.count / Bloom.params / Bloom.merge / Bloom.encode, or any file that does `import "./bloom.aql"`. Provides the exact AQL calling convention (which is not C/Python/JS), the API with mutation and probabilistic semantics, verified copy-paste idioms, and fixes for the mistakes agents most often make (foreign call syntax like `bf.contains(x)`, missing `end` terminators, assuming `add` returns a new filter).
 ---
 
 # Calling the Bloom bloom-filter library (AQL)
@@ -12,7 +12,7 @@ false negatives** and a tunable false-positive rate. Public surface = the
 ## Import
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql"
 ```
 
 - Path resolves relative to the **working directory the script runs
@@ -50,7 +50,7 @@ read-only.
 ## Idioms (verified)
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql"
 def seen ({n: 10000, p: 0.01} Bloom.make end)
 def _ (seen Bloom.add "ada" end)
 (seen Bloom.contains "ada"   end) print   # => true

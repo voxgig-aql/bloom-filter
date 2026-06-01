@@ -29,8 +29,8 @@
 #   aql test/bloom_prop_spec.aql
 
 
-"aql:test"   import end
-"./bloom.aql" import end
+import "aql:test"
+import "./bloom.aql"
 
 
 # --- shared generators ---------------------------------------------

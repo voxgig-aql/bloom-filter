@@ -54,7 +54,7 @@ false-positive rate you'll tolerate, in `(0, 0.5]`), and hand them to
 `Bloom.make`:
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql"
 def bf ({n: 100000, p: 0.001} Bloom.make end)
 (bf Bloom.params end) print
 # => {"k": 10, "m": 1437759, "n": 100000, "p": 0.001}
@@ -184,7 +184,7 @@ Import the library by relative path; you do **not** need to import
 dependencies:
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql"
 
 def bf ({n: 1000, p: 0.01} Bloom.make end)
 # … use the Bloom namespace …

@@ -20,7 +20,7 @@ build it up in pieces and run it after each step.
 Create a file `seen.aql` next to `bloom.aql` with this content:
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql"
 
 # AQL currently emits a program's first printed line last; printing one
 # blank line up front keeps the rest in source order.
@@ -124,7 +124,7 @@ filter for 50 items at a 10 % rate, fills it with exactly those 50
 items, then queries 1 000 keys that were never added:
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql"
 "" print
 
 def bf ({n: 50, p: 0.1} Bloom.make end)

@@ -7,7 +7,7 @@ items, with no false negatives and a false-positive rate you choose up
 front.
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql"
 
 def seen ({n: 10000, p: 0.01} Bloom.make end)
 def _ (seen Bloom.add "ada" end)

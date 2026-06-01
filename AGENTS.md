@@ -15,7 +15,7 @@ is the `Bloom` namespace, plus the `BloomFilter` and `Bits` types.
 ## Import
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql"
 ```
 
 - The path is resolved **relative to the working directory the script is
@@ -67,7 +67,7 @@ fields as read-only; mutate through the namespace words.
 Create, add, query:
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql"
 def seen ({n: 10000, p: 0.01} Bloom.make end)
 def _ (seen Bloom.add "ada" end)
 (seen Bloom.contains "ada"   end) print   # => true
@@ -110,7 +110,7 @@ result print
 In a test, assert the failure instead:
 
 ```aql
-"aql:test" import end
+import "aql:test"
 [a Bloom.merge b end] assert.throws end
 ```
 
@@ -126,7 +126,7 @@ In a test, assert the failure instead:
 | `a Bloom.merge b end` with different `(n, p)` | build both with identical `(n, p)` | Mismatched `m`/`k` raises `undefined_word: bloom-merge-requires-equal-m` (or `…-k`). |
 | `make BloomFilter {…}` | `{n, p} Bloom.make end` | Construct only via `Bloom.make`. |
 | `(bf Bloom.count end)` for an exact count | read `added` via `Bloom.encode`/`bf.added` | `count` is an estimate; `added` is the exact insert count. |
-| `"aql:math" import end` in your script | nothing | `bloom.aql` imports its own deps. |
+| `import "aql:math"` in your script | nothing | `bloom.aql` imports its own deps. |
 
 A note on `print` while debugging: `print` collects a forward argument,
 so `(a) print (b) print` reverses and a bare trailing `print` may fail to
