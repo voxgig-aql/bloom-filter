@@ -1,0 +1,32 @@
+# Smoke test for the bloom-filter module. Imports the library and
+# walks through every public word — a successful end-to-end run (no
+# errors) is the pass condition.
+#
+# Run:
+#   aql test/bloom_smoke_test.aql
+
+"./bloom.aql" import end
+
+"--- bloom-filter smoke demo ---" print
+
+def bf ({n: 1000, p: 0.01} Bloom.make end)
+
+"params:   " print (bf Bloom.params end) print
+
+def _add-hello (bf Bloom.add "hello" end)
+def _add-world (bf Bloom.add "world" end)
+
+"hello?:   " print (bf Bloom.contains "hello" end) print
+"world?:   " print (bf Bloom.contains "world" end) print
+"absent?:  " print (bf Bloom.contains "not-added" end) print
+"count:    " print (bf Bloom.count end) print
+"encode:   " print (bf Bloom.encode end) print
+
+# Merge into a second filter built with matching (n, p).
+def bf2 ({n: 1000, p: 0.01} Bloom.make end)
+def _add-fizz (bf2 Bloom.add "fizz" end)
+
+def merged (bf Bloom.merge bf2 end)
+"merged-hello?:" print (merged Bloom.contains "hello" end) print
+"merged-fizz?: " print (merged Bloom.contains "fizz" end) print
+"merged-count: " print (merged Bloom.count end) print

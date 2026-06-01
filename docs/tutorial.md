@@ -50,9 +50,9 @@ bind the returned filter to throwaway names (`_1`, `_2`, `_3`) just to
 keep the stack clean. Append below the `params:` line:
 
 ```aql
-def _1 (seen "ada"   Bloom.add end)
-def _2 (seen "grace" Bloom.add end)
-def _3 (seen "alan"  Bloom.add end)
+def _1 (seen Bloom.add "ada" end)
+def _2 (seen Bloom.add "grace" end)
+def _3 (seen Bloom.add "alan" end)
 ```
 
 Nothing prints yet — `add` just records the items. Note the `end` after
@@ -66,9 +66,9 @@ call stops. Forget it and the next token gets swallowed as an argument.
 Now query it. `Bloom.contains` returns a Boolean:
 
 ```aql
-`ada seen?    ${(seen "ada"   Bloom.contains end)}` print
-`grace seen?  ${(seen "grace" Bloom.contains end)}` print
-`linus seen?  ${(seen "linus" Bloom.contains end)}` print
+`ada seen?    ${(seen Bloom.contains "ada" end)}` print
+`grace seen?  ${(seen Bloom.contains "grace" end)}` print
+`linus seen?  ${(seen Bloom.contains "linus" end)}` print
 ```
 
 Run the whole file:
@@ -128,13 +128,13 @@ def bf ({n: 50, p: 0.1} Bloom.make end)
 `params: ${(bf Bloom.params end)}` print
 
 # add exactly the 50 items it was sized for
-def _ (iota 50 each [ var [[i] bf `item-${i}` Bloom.add end 0 ] ])
+def _ (iota 50 each [ var [[i] bf Bloom.add `item-${i}` end 0 ] ])
 
 # query 1000 keys that were never added
 def hits (iota 1000 each [
   var [[i]
     def key `absent-${i}`
-    if (bf key Bloom.contains end) [1] [0]
+    if (bf Bloom.contains key end) [1] [0]
   ]
 ])
 `false positives among 1000 un-added keys: ${(0 hits [add end] fold)}` print

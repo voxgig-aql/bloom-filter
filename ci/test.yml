@@ -13,8 +13,8 @@ on:
   workflow_dispatch:
 
 env:
-  # aql-lang/aql @ main, 2026-05-31. See dx-report.md for the
-  # per-commit DX history this pin tracks.
+  # aql-lang/aql @ main, 2026-05-31. Pinned to the exact commit this
+  # module is verified against.
   AQL_REF: 5b983b6c0c9f59908ec6d53403c0880b241d64c6
 
 jobs:
@@ -47,8 +47,8 @@ jobs:
           path: aql-src
 
       # The documented `go install …/cmd/go/aql@latest` cannot work
-      # while cmd/go/go.mod carries replace directives (dx-report
-      # §1.1), so we build from the clone with -mod=mod instead.
+      # while cmd/go/go.mod carries replace directives, so we build from
+      # the clone with -mod=mod instead.
       - name: Build aql
         if: steps.cache-aql.outputs.cache-hit != 'true'
         run: |
@@ -66,14 +66,17 @@ jobs:
 
       # Each suite ends with `0 test.fail-count end assert.equal`, so a
       # failure makes aql exit non-zero and fails the step.
-      - name: Unit tests
-        run: aql test/bloom_test.aql
+      - name: Unit tests (direct)
+        run: aql test/bloom_unit_test.aql
+
+      - name: Unit tests (spec format)
+        run: aql test/bloom_unit_spec.aql
+
+      - name: Property tests (direct)
+        run: aql test/bloom_prop_test.aql
 
       - name: Property tests (spec format)
         run: aql test/bloom_prop_spec.aql
 
-      - name: Property tests (PBT)
-        run: aql test/bloom_pbt.aql
-
-      - name: Smoke demo
-        run: aql index.aql
+      - name: Smoke test
+        run: aql test/bloom_smoke_test.aql

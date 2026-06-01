@@ -2,12 +2,12 @@
 #
 # Public surface (the Bloom namespace exported at the bottom):
 #
-#   {n:Integer, p:Decimal} Bloom.make     → BloomFilter
-#   bf item                Bloom.add      → BloomFilter (mutated in place)
-#   bf item                Bloom.contains → Boolean
-#   bf                     Bloom.count    → Integer  (cardinality estimate)
-#   bf                     Bloom.params   → Map      ({n, p, m, k})
-#   a b                    Bloom.merge    → BloomFilter (m and k must match)
+#   {n:Integer, p:Decimal} Bloom.make   → BloomFilter
+#   bf Bloom.add item                   → BloomFilter (mutated in place)
+#   bf Bloom.contains item              → Boolean
+#   bf Bloom.count                      → Integer  (cardinality estimate)
+#   bf Bloom.params                     → Map      ({n, p, m, k})
+#   a Bloom.merge b                     → BloomFilter (m and k must match)
 #
 # BloomFilter is a `refine Object` subtype. Bit storage is a nested
 # `Bits` Object whose fields are stringified bit indices set to 1.
@@ -38,15 +38,15 @@ def BloomFilter (refine Object {
 # --- hashing --------------------------------------------------------
 
 # 95-char printable ASCII alphabet; index 0..94 ↔ codes 32..126. AQL
-# does not expose char→code directly, so we look up via the alphabet's
-# `indexof`. Non-printable input maps to space (32).
+# does not expose char→code directly, so we look up via `indexof`.
+# Non-printable input maps to space (32).
 def alphabet " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 
 def code-at fn [
   [i:Integer s:String] [Integer] [
     def c (s slice i (i add 1))
-    def idx (c alphabet indexof)
-    idx 32 add
+    def idx (indexof alphabet c)
+    idx add 32
   ]
 ]
 
@@ -54,7 +54,7 @@ def codes-of fn [
   [s:String] [List] [
     def n (s size)
     iota n each [
-      s swap code-at
+      var [[i] s code-at i end]
     ]
   ]
 ]
@@ -96,6 +96,9 @@ def bit-key fn [
 def bit-test fn [
   [i:Integer bits:Bits] [Integer] [
     def k (i bit-key)
+    # `get`/`set` on the bit store stay in stack form: they thread and
+    # mutate the piped store in place, which the forward builtin form
+    # does not do for a `refine Object` param.
     def v (bits k get)
     v otherwise 0
   ]
@@ -125,8 +128,8 @@ def indices-for fn [
     def m bf.m
     def k bf.k
     iota k each [
-      # stack: i — forward arithmetic gives (h1 + i*h2) mod m.
-      mul h2 add h1 mod m
+      # (h1 + i*h2) mod m, written infix with i bound
+      var [[i] (i mul h2) add h1 mod m]
     ]
   ]
 ]
@@ -153,15 +156,14 @@ def derive-k fn [
   ]
 ]
 
-# `opts:Options` dispatches as of aql 5b983b6 (dx-report.md §4.1);
-# earlier builds forced `Map` here because an Options-typed parameter
-# broke dispatch.
+# `opts:Options` dispatches as of aql 5b983b6; earlier builds forced
+# `Map` here because an Options-typed parameter broke dispatch.
 def make-bloom fn [
   [opts:Options] [BloomFilter] [
     def n-val (opts "n" get)
     def p-val (opts "p" get)
-    def m-val (n-val p-val derive-m)
-    def k-val (n-val m-val derive-k)
+    def m-val (derive-m p-val n-val)
+    def k-val (derive-k m-val n-val)
     make BloomFilter {
       n:     n-val
       p:     p-val
@@ -179,12 +181,13 @@ def make-bloom fn [
 def bloom-add fn [
   [item:Any bf:BloomFilter] [BloomFilter] [
     def bits bf.bits
-    def _ ((bf item indices-for) each [
-      # stack: idx — push bits below, then bit-mark consumes (i, bits).
-      bits swap bit-mark end
-      0
+    def _ ((bf indices-for item) each [
+      var [[idx]
+        bits bit-mark idx end
+        0
+      ]
     ])
-    bf (bf.added 1 add) "added" set
+    bf (bf.added add 1) "added" set
     bf
   ]
 ]
@@ -192,7 +195,9 @@ def bloom-add fn [
 def bloom-contains fn [
   [item:Any bf:BloomFilter] [Boolean] [
     def bits bf.bits
-    (bf item indices-for) each [bits swap bit-test end] all end
+    (bf indices-for item) each [
+      var [[idx] bits bit-test idx end]
+    ] all end
   ]
 ]
 
@@ -204,7 +209,9 @@ def popcount fn [
   [bf:BloomFilter] [Integer] [
     def bits bf.bits
     def m bf.m
-    def hits (iota m each [bits swap bit-test end])
+    def hits (iota m each [
+      var [[i] bits bit-test i end]
+    ])
     0 hits [add end] fold
   ]
 ]
@@ -215,13 +222,13 @@ def popcount fn [
 # `if` is invoked in its full-forward form `if cond [then] [else]`.
 # The all-forward and all-stack forms both select the right branch;
 # only the mixed `cond if [then] [else]` form picks the wrong one, so
-# we keep `if` and its operands on the same side (dx-report §6.2).
+# we keep `if` and its operands on the same side.
 def bloom-count fn [
   [bf:BloomFilter] [Integer] [
     def x (bf popcount end)
     def m bf.m
     def k bf.k
-    def saturated (x m eq)
+    def saturated (x eq m)
     if saturated [bf.added] [
       def md (m convert Decimal)
       def kd (k convert Decimal)
@@ -247,7 +254,9 @@ def bloom-encode fn [
   [bf:BloomFilter] [String] [
     def bits bf.bits
     def m    bf.m
-    def hits (iota m each [bits swap bit-test end])
+    def hits (iota m each [
+      var [[i] bits bit-test i end]
+    ])
     def set-idxs (array.where hits end)
     def payload (do {
       n:     [bf.n]
@@ -269,7 +278,7 @@ def bloom-encode fn [
 # (n, p). On a mismatch we raise. Note: aql 5b983b6 redefined `error`
 # as an error-*handler* combinator (`do [risky] error [handler]`) and
 # removed the old string-raising form, with no replacement word for
-# raising a custom message (dx-report §9.10). The catchable idiom that
+# raising a custom message. The catchable idiom that
 # remains is to dispatch a descriptively-named word that isn't defined;
 # the raised `undefined_word: <name>` carries the failed precondition
 # as its text, and callers can trap it with `do […] error […]` or
@@ -280,8 +289,8 @@ def bloom-merge fn [
     def bm b.m
     def ak a.k
     def bk b.k
-    def m-ok (am bm eq)
-    def k-ok (ak bk eq)
+    def m-ok (am eq bm)
+    def k-ok (ak eq bk)
     if (m-ok not) [
       bloom-merge-requires-equal-m
     ] [
@@ -291,19 +300,19 @@ def bloom-merge fn [
         def a-bits a.bits
         def b-bits b.bits
         def _ (iota am each [
-          # stack: i — if b's bit set, mark a's bit; always push 0
-          # so the each body produces something.
           var [[i]
-            def is-set (b-bits i bit-test end 1 eq)
+            # if b's bit is set, mark a's bit; always yield 0 so the
+            # each body produces a value.
+            def is-set ((b-bits bit-test i end) eq 1)
             if is-set [
-              a-bits i bit-mark end
+              a-bits bit-mark i end
               0
             ] [
               0
             ]
           ]
         ])
-        a (a.added b.added add) "added" set
+        a (a.added add b.added) "added" set
       ]
     ]
     a

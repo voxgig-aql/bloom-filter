@@ -1,7 +1,11 @@
-# bloom-filter tests using aql:test's imperative API.
+# bloom-filter direct unit tests using aql:test's imperative API.
+#
+# The sibling file `test/bloom_unit_spec.aql` covers the same kind of
+# example-based checks through the declarative spec surface
+# (`test.spec` / `test.case` / `test.run-spec`).
 #
 # Run:
-#   aql test/bloom_test.aql
+#   aql test/bloom_unit_test.aql
 
 
 "aql:test"   import end
@@ -24,7 +28,7 @@
 
 [
   def bf ({n: 1000, p: 0.01} Bloom.make end)
-  false (bf "anything" Bloom.contains end) assert.equal end
+  false (bf Bloom.contains "anything" end) assert.equal end
 ] "fresh-contains-nothing" test.test end
 
 
@@ -32,9 +36,9 @@
 
 [
   def bf ({n: 1000, p: 0.01} Bloom.make end)
-  def _ (bf "hello" Bloom.add end)
-  true  (bf "hello"     Bloom.contains end) assert.equal end
-  false (bf "not-there" Bloom.contains end) assert.equal end
+  def _ (bf Bloom.add "hello" end)
+  true  (bf Bloom.contains "hello" end) assert.equal end
+  false (bf Bloom.contains "not-there" end) assert.equal end
 ] "add-then-contains" test.test end
 
 
@@ -45,14 +49,14 @@
   def _ (iota 50 each [
     var [[i]
       def key (convert String i)
-      bf key Bloom.add end
+      bf Bloom.add key end
       0
     ]
   ])
   def hits (iota 50 each [
     var [[i]
       def key (convert String i)
-      if (bf key Bloom.contains end) [1] [0]
+      if (bf Bloom.contains key end) [1] [0]
     ]
   ])
   50 (0 hits [add end] fold) assert.equal end
@@ -66,7 +70,7 @@
   def _ (iota 50 each [
     var [[i]
       def key (convert String i)
-      bf key Bloom.add end
+      bf Bloom.add key end
       0
     ]
   ])
@@ -93,11 +97,11 @@
 [
   def a ({n: 1000, p: 0.01} Bloom.make end)
   def b ({n: 1000, p: 0.01} Bloom.make end)
-  def _a (a "from-a" Bloom.add end)
-  def _b (b "from-b" Bloom.add end)
-  def merged (a b Bloom.merge end)
-  true (merged "from-a" Bloom.contains end) assert.equal end
-  true (merged "from-b" Bloom.contains end) assert.equal end
+  def _a (a Bloom.add "from-a" end)
+  def _b (b Bloom.add "from-b" end)
+  def merged (a Bloom.merge b end)
+  true (merged Bloom.contains "from-a" end) assert.equal end
+  true (merged Bloom.contains "from-b" end) assert.equal end
 ] "merge-union" test.test end
 
 
@@ -106,7 +110,7 @@
 [
   def a ({n: 1000, p: 0.01} Bloom.make end)
   def b ({n:  500, p: 0.01} Bloom.make end)
-  [a b Bloom.merge end] assert.throws end
+  [a Bloom.merge b end] assert.throws end
 ] "merge-mismatch-throws" test.test end
 
 

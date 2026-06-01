@@ -9,7 +9,7 @@
 # — which `test.run-property` then runs (at the default 100 iterations).
 # Specs are values, so we assemble them into a list and run the list.
 #
-# The sibling file `test/bloom_pbt.aql` covers the SAME idea through the
+# The sibling file `test/bloom_prop_test.aql` covers the SAME idea through the
 # other surface — the imperative `test.check-prop` driver, called
 # directly with explicit run/seed/shrink counts. Keeping both is on
 # purpose: together they exercise both halves of the framework. The
@@ -23,8 +23,7 @@
 # and must return a Boolean. A single false (or an error) fails the
 # property and reports the offending input.
 #
-# `if` is written all-forward (`if cond [then] [else]`) throughout; see
-# dx-report.md §6.2.
+# `if` is written all-forward (`if cond [then] [else]`) throughout.
 #
 # Run:
 #   aql test/bloom_prop_spec.aql
@@ -69,8 +68,8 @@ def specs [
     [ r.string charset (r.int 1 16) ]
     [ var [[key]
         def bf ({n: 1000, p: 0.01} Bloom.make end)
-        def _ (bf key Bloom.add end)
-        (bf key Bloom.contains end)
+        def _ (bf Bloom.add key end)
+        (bf Bloom.contains key end)
     ] ])
 
   # 2. A fresh filter (no bits set) reports every key as absent.
@@ -78,7 +77,7 @@ def specs [
     [ r.string charset (r.int 1 16) ]
     [ var [[key]
         def bf ({n: 1000, p: 0.01} Bloom.make end)
-        ((bf key Bloom.contains end) not)
+        ((bf Bloom.contains key end) not)
     ] ])
 
   # 3. make derives well-formed params for any (n, p): m >= 1, k >= 1,
@@ -107,8 +106,8 @@ def specs [
     [ r.list-of [ r.string charset (r.int 1 12) ] (r.int 1 20) ]
     [ var [[items]
         def bf ({n: 1000, p: 0.01} Bloom.make end)
-        def _ (items each [ var [[it] bf it Bloom.add end 0 ] ])
-        (items each [ var [[it] (bf it Bloom.contains end) ] ] all end)
+        def _ (items each [ var [[it] bf Bloom.add it end 0 ] ])
+        (items each [ var [[it] (bf Bloom.contains it end) ] ] all end)
     ] ])
 
 ]

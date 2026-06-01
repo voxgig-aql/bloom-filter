@@ -22,7 +22,7 @@ bloom filter is; if not, start with the [Tutorial](tutorial.md). For the
 
 The module is written in AQL, which has no tagged release yet, so build
 the interpreter from source (the documented `go install …/aql@latest`
-fails on the repo's replace directives — see `dx-report.md` §1.1):
+fails on the repo's replace directives):
 
 ```bash
 git clone https://github.com/aql-lang/aql /tmp/aql-source
@@ -39,7 +39,7 @@ aql -version
 Run any script in this repo by passing its path:
 
 ```bash
-aql index.aql
+aql test/bloom_smoke_test.aql
 ```
 
 This module is verified against aql commit `5b983b6`; the CI workflow
@@ -73,10 +73,10 @@ result with `Bloom.params`. (How the numbers are derived:
 `Bloom.contains` tests membership and returns a Boolean:
 
 ```aql
-def _ (bf "user@example.com" Bloom.add end)
+def _ (bf Bloom.add "user@example.com" end)
 
-(bf "user@example.com" Bloom.contains end) print   # => true
-(bf "nobody@example.com" Bloom.contains end) print # => false  (guaranteed correct)
+(bf Bloom.contains "user@example.com" end) print   # => true
+(bf Bloom.contains "nobody@example.com" end) print # => false  (guaranteed correct)
 ```
 
 A `false` is always correct. A `true` means "probably present" — verify
@@ -87,7 +87,7 @@ body yields a value):
 
 ```aql
 def _ (iota 1000 each [
-  var [[i] bf `key-${i}` Bloom.add end 0 ]
+  var [[i] bf Bloom.add `key-${i}` end 0 ]
 ])
 ```
 
@@ -116,12 +116,12 @@ folds the second into the first and returns the first:
 ```aql
 def a ({n: 1000, p: 0.01} Bloom.make end)
 def b ({n: 1000, p: 0.01} Bloom.make end)
-def _a (a "from-a" Bloom.add end)
-def _b (b "from-b" Bloom.add end)
+def _a (a Bloom.add "from-a" end)
+def _b (b Bloom.add "from-b" end)
 
-def merged (a b Bloom.merge end)
-(merged "from-a" Bloom.contains end) print   # => true
-(merged "from-b" Bloom.contains end) print   # => true
+def merged (a Bloom.merge b end)
+(merged Bloom.contains "from-a" end) print   # => true
+(merged Bloom.contains "from-b" end) print   # => true
 ```
 
 `merge` mutates the first filter (`a`) in place, so `a` and `merged` are
@@ -139,7 +139,7 @@ Wrap the call in `do … error …` to recover:
 def a ({n: 1000, p: 0.01} Bloom.make end)
 def b ({n:  500, p: 0.01} Bloom.make end)   # different n → different m
 
-def result (do [a b Bloom.merge end] error [
+def result (do [a Bloom.merge b end] error [
   var [[e] "filters are incompatible — rebuild b with a's (n, p)" ]
 ])
 result print
@@ -151,7 +151,7 @@ Inside the `error` handler the raised value is on the stack; here we
 assert the failure instead:
 
 ```aql
-[a b Bloom.merge end] assert.throws end
+[a Bloom.merge b end] assert.throws end
 ```
 
 (Why the raised error reads `undefined_word`:
@@ -166,7 +166,7 @@ the set bit indices — suitable for logging or persistence:
 
 ```aql
 def snap ({n: 1000, p: 0.01} Bloom.make end)
-def _ (snap "x" Bloom.add end)
+def _ (snap Bloom.add "x" end)
 (snap Bloom.encode end) print
 # => {added:1 k:7 m:9586 n:1000 p:0.01 set:[223 1110 2827 3714 4601 6318 7205]}
 ```
@@ -191,27 +191,38 @@ def bf ({n: 1000, p: 0.01} Bloom.make end)
 ```
 
 Every `Bloom.*` call must end with `end` (or be wrapped in parens) so
-the word doesn't swallow the following token. `index.aql` is a complete
-worked example you can copy from.
+the word doesn't swallow the following token. `test/bloom_smoke_test.aql`
+is a complete worked example you can copy from.
 
 ---
 
 ## Run the tests
 
-Four suites ship with the module. Run them with `aql`:
+Five suites ship with the module. Run them with `aql`:
 
 ```bash
-aql test/bloom_test.aql        # example-based unit tests (aql:test)
+aql test/bloom_unit_test.aql   # example-based unit tests — direct (aql:test)
+aql test/bloom_unit_spec.aql   # example-based unit tests — declarative spec format
+aql test/bloom_prop_test.aql   # property tests — direct test.check-prop form
 aql test/bloom_prop_spec.aql   # property tests — declarative spec format
-aql test/bloom_pbt.aql         # property tests — direct test.check-prop form
-aql index.aql                  # smoke demo / end-to-end walk-through
+aql test/bloom_smoke_test.aql  # end-to-end walk-through over every public word
 ```
 
-The two property suites are intentionally separate: they exercise the
-two ways `aql:test` drives property checks. `bloom_prop_spec.aql` builds
+The file names follow a consistent convention: `_test.aql` is a direct
+suite (assertions or `test.check-prop` calls written out in code), and
+`_spec.aql` is a declarative suite (cases or properties built as data
+and handed to a runner). Both the unit and property layers ship in both
+forms.
+
+The two unit suites express the same example checks two ways:
+`bloom_unit_test.aql` asserts imperatively with `test.test` /
+`assert.equal`, while `bloom_unit_spec.aql` builds each check as a
+`TestSpec` (`test.spec` / `test.case`) that `test.run-spec` dispatches.
+
+The two property suites are likewise split: `bloom_prop_spec.aql` builds
 each property as a declarative `PropertySpec` (`test.prop`) and runs it
 with `test.run-property` at the default 100 iterations — clean, but the
-run count is fixed. `bloom_pbt.aql` calls the imperative
+run count is fixed. `bloom_prop_test.aql` calls the imperative
 `test.check-prop` driver directly, passing `runs`/`seed`/`max-shrinks`
 explicitly, which is why it carries the expensive O(m) properties
 (merge, encode) at a smaller run budget.
