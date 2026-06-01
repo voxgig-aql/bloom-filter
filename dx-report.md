@@ -40,7 +40,7 @@ tests including property-based tests. The library was re-implemented
 against `f7247dd`, refined against `333c420`, and the constructor
 was switched from `Map` back to the natural `Options` against
 `5b983b6`. The code that ships in this repo today (`bloom.aql` +
-`index.aql` + `test/bloom_test.aql` + `test/bloom_pbt.aql`) is the
+`smoke.aql` + `test/bloom_test.aql` + `test/bloom_pbt.aql`) is the
 cleaner pass. What follows is the exhaustive list of friction
 encountered along the way.
 
@@ -209,7 +209,7 @@ What's still open as of `5b983b6` (re-verified):
   (fixed) but now reports many false positives** about the
   imported namespace's members being undefined. Concretely:
   ```
-  $ aql check index.aql
+  $ aql check smoke.aql
   check: 8:28: [error] undefined_word: undefined word: Bloom
   check: 8:33: [error] no_signature: no matching signature for get; assuming best-fit candidate for analysis
   …
@@ -1042,14 +1042,14 @@ reject.
 analysis runs:
 
 ```
-$ aql check index.aql
+$ aql check smoke.aql
 check error: import: module "" not found (searched .aql// from /home/user/bloom-filter to /)
 ```
 
 …even though the file does not contain any empty import. The
 problem appears to be in how `aql check` initialises the module
 resolver for files that themselves contain `import` statements.
-The same file runs cleanly via `aql index.aql`. `aql check --soft`
+The same file runs cleanly via `aql smoke.aql`. `aql check --soft`
 hits the same error. So today `aql check` is unusable as a CI gate
 for any file that imports another (which is most real files).
 
@@ -1069,7 +1069,7 @@ across the import boundary, so every reference to `Bloom.make` /
 plus a `no matching signature for get`. Concretely:
 
 ```
-$ aql check index.aql
+$ aql check smoke.aql
 check: 8:28: [error] undefined_word: undefined word: Bloom
 check: 8:33: [error] no_signature: no matching signature for get; assuming best-fit candidate for analysis
 check: 10:24: [error] undefined_word: undefined word: Bloom
@@ -1663,7 +1663,7 @@ about nested object fields.
 ### 8.1 Sub-imports cannot resolve native modules — the show-stopper [fixed]
 
 The plan called for a layered structure: `bloom.aql` defines and
-exports the API, `index.aql` imports it and demos. That broke
+exports the API, `smoke.aql` imports it and demos. That broke
 immediately:
 
 ```
@@ -1727,7 +1727,7 @@ $ aql /tmp/use.aql
 The whole point of having a module system was that libraries could
 package up their own dependencies without forcing the caller to
 import them. That works now. The library this repo ships uses it
-directly — `bloom.aql` imports `aql:math` itself, and `index.aql`
+directly — `bloom.aql` imports `aql:math` itself, and `smoke.aql`
 just does `"./bloom.aql" import end` without knowing about math.
 
 ### 8.2 `import 'module [body]` syntax surprise [fixed]
@@ -1900,7 +1900,7 @@ A
 ```
 
 `B C D` are in order; `A`, the first, is rotated to the end. The
-same thing makes `index.aql`'s banner and the docs' first label come
+same thing makes `smoke.aql`'s banner and the docs' first label come
 out last. Two reliable workarounds, both used in this repo's
 `docs/tutorial.md`:
 
@@ -2496,7 +2496,7 @@ N4. **`aql help` advertises top-level math/`set`/etc. words
 N5. **No path to a runnable single-file library.** `bloom.aql`
     can't `aql bloom.aql`-be-run-directly because `export` is
     undefined outside an import. The library has to be entered
-    through `index.aql`. §8.3.
+    through `smoke.aql`. §8.3.
 
 ### Done well in `f7247dd`
 

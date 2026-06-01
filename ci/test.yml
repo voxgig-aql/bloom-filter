@@ -76,4 +76,4 @@ jobs:
         run: aql test/bloom_pbt.aql
 
       - name: Smoke demo
-        run: aql index.aql
+        run: aql smoke.aql

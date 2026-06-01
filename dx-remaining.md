@@ -51,7 +51,7 @@ call site flags 1–2 spurious errors. Blocks CI gating.
 **Reproducer (against the library in this repo):**
 
 ```
-$ aql check index.aql
+$ aql check smoke.aql
 check: 8:28: [error] undefined_word: undefined word: Bloom
 check: 8:33: [error] no_signature: no matching signature for get; assuming best-fit candidate for analysis
 check: 10:24: [error] undefined_word: undefined word: Bloom
@@ -60,7 +60,7 @@ check: 12:28: [error] undefined_word: undefined word: Bloom
 ...12 errors total for 7 call sites...
 ```
 
-The same file runs cleanly via `aql index.aql`.
+The same file runs cleanly via `aql smoke.aql`.
 
 **Expected:** the checker should either resolve the exports of
 `"./bloom.aql"` (which it can read), or treat unresolved names from an
@@ -101,9 +101,9 @@ after every dispatch like `bf "hello" Bloom.add end` in normal code.
 **Library impact (count of `end` markers needed):**
 
 ```
-$ grep -c " end " bloom.aql index.aql test/bloom_test.aql
+$ grep -c " end " bloom.aql smoke.aql test/bloom_test.aql
 bloom.aql:24
-index.aql:13
+smoke.aql:13
 test/bloom_test.aql:43
 ```
 
@@ -256,14 +256,14 @@ exports a namespace when imported.
 ```
 $ aql /home/user/bloom-filter/bloom.aql
 error: [aql/undefined_word]: undefined word: export
-$ aql /home/user/bloom-filter/index.aql   # imports bloom.aql — works
+$ aql /home/user/bloom-filter/smoke.aql   # imports bloom.aql — works
 params:   ...
 ```
 
 **Expected:** `export` is a no-op at the top level (i.e., when not in
 an import context), so the same file can serve both modes.
 
-**Workaround:** have a separate `index.aql` for direct execution; keep
+**Workaround:** have a separate `smoke.aql` for direct execution; keep
 `bloom.aql` import-only.
 
 **Suggested fix:** in `Engine.Run` at the top-level, register `export`
@@ -460,7 +460,7 @@ harder than necessary.
 **Reproducer:**
 
 ```
-$ aql /home/user/bloom-filter/index.aql 2>&1 | grep -E "(params|Object)" | head -2
+$ aql /home/user/bloom-filter/smoke.aql 2>&1 | grep -E "(params|Object)" | head -2
 params:   {"k": 7, "m": 9586, "n": 1000, "p": 0.01}
 # elsewhere: Object/BloomFilter{added:2 k:7 m:9586 n:1000 p:0.01 set:[...]}
 ```

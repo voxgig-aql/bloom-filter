@@ -39,7 +39,7 @@ aql -version
 Run any script in this repo by passing its path:
 
 ```bash
-aql index.aql
+aql smoke.aql
 ```
 
 This module is verified against aql commit `5b983b6`; the CI workflow
@@ -191,7 +191,7 @@ def bf ({n: 1000, p: 0.01} Bloom.make end)
 ```
 
 Every `Bloom.*` call must end with `end` (or be wrapped in parens) so
-the word doesn't swallow the following token. `index.aql` is a complete
+the word doesn't swallow the following token. `smoke.aql` is a complete
 worked example you can copy from.
 
 ---
@@ -204,7 +204,7 @@ Four suites ship with the module. Run them with `aql`:
 aql test/bloom_test.aql        # example-based unit tests (aql:test)
 aql test/bloom_prop_spec.aql   # property tests — declarative spec format
 aql test/bloom_pbt.aql         # property tests — direct test.check-prop form
-aql index.aql                  # smoke demo / end-to-end walk-through
+aql smoke.aql                  # smoke demo / end-to-end walk-through
 ```
 
 The two property suites are intentionally separate: they exercise the

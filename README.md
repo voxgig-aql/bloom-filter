@@ -50,7 +50,7 @@ Full details, including the calling convention (every call ends with
 
 ```
 bloom.aql                 the library (the Bloom namespace)
-index.aql                 smoke demo / worked example
+smoke.aql                 smoke demo / worked example
 test/bloom_test.aql       example-based unit tests
 test/bloom_prop_spec.aql  property-based tests — declarative spec format
 test/bloom_pbt.aql        property-based tests — direct test.check-prop form
@@ -66,7 +66,7 @@ Build the `aql` interpreter, then run any script or test — see
 [Run the tests](docs/how-to.md#run-the-tests):
 
 ```bash
-aql index.aql                  # smoke demo
+aql smoke.aql                  # smoke demo
 aql test/bloom_test.aql        # unit tests
 aql test/bloom_prop_spec.aql   # property tests — declarative spec format
 aql test/bloom_pbt.aql         # property tests — direct test.check-prop form

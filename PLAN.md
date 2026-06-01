@@ -352,7 +352,7 @@ friction.
 
 Once Phase A + B + D + E ship, the bloom-filter project becomes:
 
-1. **Layered structure**: `bloom.aql` defines API + `export "Bloom" {…}`; `index.aql` does `"./bloom.aql" import` and demos.
+1. **Layered structure**: `bloom.aql` defines API + `export "Bloom" {…}`; `smoke.aql` does `"./bloom.aql" import` and demos.
 2. **Typed signatures**: `[bf:BloomFilter]`, `[Bits]`, etc., once §4.2 fixed.
 3. **Real `aql:test`** in `test/bloom_test.aql` once §10 fixed.
 4. **Re-add `bloom-encode` and `bloom-merge`** once §6.2 fixed.
@@ -421,7 +421,7 @@ Phase G — docs (followup)
 - [x] CLI.md install command
 
 Bloom-filter cleanup
-- [ ] Layered structure (bloom.aql + index.aql)
+- [ ] Layered structure (bloom.aql + smoke.aql)
 - [ ] Typed BloomFilter / Bits signatures
 - [ ] aql:test-driven tests
 - [ ] bloom-encode and bloom-merge re-added
