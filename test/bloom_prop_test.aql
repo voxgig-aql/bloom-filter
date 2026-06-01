@@ -44,8 +44,8 @@ test.check-prop "no-false-negatives"
   [
     var [[s]
       def bf ({n: 1000, p: 0.01} Bloom.make end)
-      def _ (bf s Bloom.add end)
-      bf s Bloom.contains end
+      def _ (bf Bloom.add s end)
+      bf Bloom.contains s end
     ]
   ]
   10 1 0
@@ -65,11 +65,11 @@ test.check-prop "added-equals-insert-count"
       def _ (iota n each [
         var [[i]
           def key (convert String i)
-          def _2 (bf key Bloom.add end)
+          def _2 (bf Bloom.add key end)
           0
         ]
       ])
-      (bf "added" get) n eq
+      (bf "added" get) eq n
     ]
   ]
   10 1 0
@@ -89,17 +89,17 @@ test.check-prop "bulk-no-false-negatives"
       def _ (iota n each [
         var [[i]
           def key (convert String i)
-          def _2 (bf key Bloom.add end)
+          def _2 (bf Bloom.add key end)
           0
         ]
       ])
       def hits (iota n each [
         var [[i]
           def key (convert String i)
-          if (bf key Bloom.contains end) [1] [0]
+          if (bf Bloom.contains key end) [1] [0]
         ]
       ])
-      n (0 hits [add end] fold) eq
+      n eq (0 hits [add end] fold)
     ]
   ]
   10 1 0
@@ -125,7 +125,7 @@ test.check-prop "derived-m-formula"
       def num (n math.negate convert Decimal mul lnp)
       def den (ln2 mul ln2)
       def m-expected (num div den math.ceil)
-      m-expected bf.m eq
+      m-expected eq bf.m
     ]
   ]
   10 1 0
@@ -139,7 +139,7 @@ test.check-prop "derived-k-formula"
       def bf ({n: n, p: p} Bloom.make end)
       def ln2 (2 math.log)
       def k-expected (bf.m convert Decimal mul ln2 div n math.round)
-      k-expected bf.k eq
+      k-expected eq bf.k
     ]
   ]
   10 1 0
@@ -163,12 +163,12 @@ test.check-prop "merge-preserves-membership"
       def b-key (pair get 1)
       def a ({n: 100, p: 0.05} Bloom.make end)
       def b ({n: 100, p: 0.05} Bloom.make end)
-      def _a (a a-key Bloom.add end)
-      def _b (b b-key Bloom.add end)
-      def merged (a b Bloom.merge end)
-      def has-a (merged a-key Bloom.contains end)
-      def has-b (merged b-key Bloom.contains end)
-      has-a has-b and
+      def _a (a Bloom.add a-key end)
+      def _b (b Bloom.add b-key end)
+      def merged (a Bloom.merge b end)
+      def has-a (merged Bloom.contains a-key end)
+      def has-b (merged Bloom.contains b-key end)
+      has-a and has-b
     ]
   ]
   10 1 0
@@ -188,12 +188,12 @@ test.check-prop "encode-contains-params"
   [
     var [[s]
       def bf ({n: 100, p: 0.05} Bloom.make end)
-      def _ (bf s Bloom.add end)
+      def _ (bf Bloom.add s end)
       def payload (bf Bloom.encode end)
-      def has-n   ("n:100"   payload indexof 0 gte)
-      def has-fp  ("p:0.05"  payload indexof 0 gte)
-      def has-a   ("added:1" payload indexof 0 gte)
-      has-n has-fp and has-a and
+      def has-n   ((indexof payload "n:100")   gte 0)
+      def has-fp  ((indexof payload "p:0.05")  gte 0)
+      def has-a   ((indexof payload "added:1") gte 0)
+      has-n and has-fp and has-a
     ]
   ]
   5 1 0

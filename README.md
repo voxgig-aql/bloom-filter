@@ -10,10 +10,10 @@ front.
 "./bloom.aql" import end
 
 def seen ({n: 10000, p: 0.01} Bloom.make end)
-def _ (seen "ada" Bloom.add end)
+def _ (seen Bloom.add "ada" end)
 
-(seen "ada"   Bloom.contains end) print   # => true
-(seen "linus" Bloom.contains end) print   # => false
+(seen Bloom.contains "ada" end) print   # => true
+(seen Bloom.contains "linus" end) print   # => false
 ```
 
 ## Documentation
@@ -36,11 +36,11 @@ filters and just want the API? Jump to the [Reference](docs/reference.md).
 | Word | Purpose |
 |------|---------|
 | `{n, p} Bloom.make`      | build a filter sized for capacity `n` at false-positive rate `p` |
-| `bf item Bloom.add`      | insert an item (mutates `bf`) |
-| `bf item Bloom.contains` | test membership → Boolean |
+| `bf Bloom.add item`      | insert an item (mutates `bf`) |
+| `bf Bloom.contains item` | test membership → Boolean |
 | `bf Bloom.count`         | estimate distinct items added |
 | `bf Bloom.params`        | report `{n, p, m, k}` |
-| `a b Bloom.merge`        | union two filters with matching `(m, k)` |
+| `a Bloom.merge b`        | union two filters with matching `(m, k)` |
 | `bf Bloom.encode`        | serialize to a snapshot string |
 
 Full details, including the calling convention (every call ends with

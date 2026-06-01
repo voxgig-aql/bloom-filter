@@ -22,7 +22,7 @@ A consuming script does **not** need to import `aql:math` or
 
 Every operation is a forward-dispatched word and must be terminated
 with `end` (or wrapped in parentheses) at the call site, e.g.
-`bf "x" Bloom.add end` or `(bf "x" Bloom.add)`. Without a terminator
+`bf Bloom.add "x" end` or `(bf Bloom.add "x")`. Without a terminator
 the word collects the following token as an argument. This is general
 AQL forward-precedence behaviour, not specific to this module.
 
@@ -89,7 +89,7 @@ before hashing.
 
 | | |
 |--|--|
-| **Call**    | `bf item Bloom.add end` |
+| **Call**    | `bf Bloom.add item end` |
 | **Stack in**| `BloomFilter`, then the item (`Any`) |
 | **Returns** | the same `BloomFilter`, mutated in place |
 | **Effect**  | sets `k` bits; increments `added` by 1 |
@@ -104,7 +104,7 @@ Test membership.
 
 | | |
 |--|--|
-| **Call**    | `bf item Bloom.contains end` |
+| **Call**    | `bf Bloom.contains item end` |
 | **Stack in**| `BloomFilter`, then the item (`Any`) |
 | **Returns** | `Boolean` |
 
@@ -114,9 +114,9 @@ approximately rate `p`. There are no false negatives. See
 [Explanation §No false negatives](explanation.md#why-there-are-no-false-negatives).
 
 ```aql
-def _ (bf "alice" Bloom.add end)
-(bf "alice" Bloom.contains end) print   # => true
-(bf "carol" Bloom.contains end) print   # => false
+def _ (bf Bloom.add "alice" end)
+(bf Bloom.contains "alice" end) print   # => true
+(bf Bloom.contains "carol" end) print   # => false
 ```
 
 ### `Bloom.count`
@@ -157,7 +157,7 @@ Union two filters into the first.
 
 | | |
 |--|--|
-| **Call**    | `a b Bloom.merge end` |
+| **Call**    | `a Bloom.merge b end` |
 | **Stack in**| target `BloomFilter` `a`, then source `BloomFilter` `b` |
 | **Returns** | `a`, now containing every bit that was set in `a` or `b` |
 | **Effect**  | mutates `a` in place; `b` is unchanged; `a.added` becomes `a.added + b.added` |

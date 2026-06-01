@@ -17,7 +17,7 @@
 #
 # Because `in` elements are ordinary values, we build the BloomFilter a
 # case needs inline — `Bloom.add` returns the (mutated) filter, so a
-# pre-populated filter is just `(... Bloom.make end) key Bloom.add end`.
+# pre-populated filter is just `(... Bloom.make end) Bloom.add key end`.
 # Only the exported `Bloom` words are used as subjects; no local helpers.
 #
 # Run:
@@ -62,7 +62,7 @@ def specs [
     cases: [
       {
         name: "added-key-found"
-        in:   [ (({n: 1000, p: 0.01} Bloom.make end) "hello" Bloom.add end) "hello" ]
+        in:   [ (({n: 1000, p: 0.01} Bloom.make end) Bloom.add "hello" end) "hello" ]
         out:  true
       }
       {

@@ -73,10 +73,10 @@ result with `Bloom.params`. (How the numbers are derived:
 `Bloom.contains` tests membership and returns a Boolean:
 
 ```aql
-def _ (bf "user@example.com" Bloom.add end)
+def _ (bf Bloom.add "user@example.com" end)
 
-(bf "user@example.com" Bloom.contains end) print   # => true
-(bf "nobody@example.com" Bloom.contains end) print # => false  (guaranteed correct)
+(bf Bloom.contains "user@example.com" end) print   # => true
+(bf Bloom.contains "nobody@example.com" end) print # => false  (guaranteed correct)
 ```
 
 A `false` is always correct. A `true` means "probably present" — verify
@@ -87,7 +87,7 @@ body yields a value):
 
 ```aql
 def _ (iota 1000 each [
-  var [[i] bf `key-${i}` Bloom.add end 0 ]
+  var [[i] bf Bloom.add `key-${i}` end 0 ]
 ])
 ```
 
@@ -116,12 +116,12 @@ folds the second into the first and returns the first:
 ```aql
 def a ({n: 1000, p: 0.01} Bloom.make end)
 def b ({n: 1000, p: 0.01} Bloom.make end)
-def _a (a "from-a" Bloom.add end)
-def _b (b "from-b" Bloom.add end)
+def _a (a Bloom.add "from-a" end)
+def _b (b Bloom.add "from-b" end)
 
-def merged (a b Bloom.merge end)
-(merged "from-a" Bloom.contains end) print   # => true
-(merged "from-b" Bloom.contains end) print   # => true
+def merged (a Bloom.merge b end)
+(merged Bloom.contains "from-a" end) print   # => true
+(merged Bloom.contains "from-b" end) print   # => true
 ```
 
 `merge` mutates the first filter (`a`) in place, so `a` and `merged` are
@@ -139,7 +139,7 @@ Wrap the call in `do … error …` to recover:
 def a ({n: 1000, p: 0.01} Bloom.make end)
 def b ({n:  500, p: 0.01} Bloom.make end)   # different n → different m
 
-def result (do [a b Bloom.merge end] error [
+def result (do [a Bloom.merge b end] error [
   var [[e] "filters are incompatible — rebuild b with a's (n, p)" ]
 ])
 result print
@@ -151,7 +151,7 @@ Inside the `error` handler the raised value is on the stack; here we
 assert the failure instead:
 
 ```aql
-[a b Bloom.merge end] assert.throws end
+[a Bloom.merge b end] assert.throws end
 ```
 
 (Why the raised error reads `undefined_word`:
@@ -166,7 +166,7 @@ the set bit indices — suitable for logging or persistence:
 
 ```aql
 def snap ({n: 1000, p: 0.01} Bloom.make end)
-def _ (snap "x" Bloom.add end)
+def _ (snap Bloom.add "x" end)
 (snap Bloom.encode end) print
 # => {added:1 k:7 m:9586 n:1000 p:0.01 set:[223 1110 2827 3714 4601 6318 7205]}
 ```
