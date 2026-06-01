@@ -7,6 +7,9 @@ just a working `aql` binary (see
 [How-to → Install and run](how-to.md#install-and-run-aql)) and this
 repository checked out.
 
+> **AI agents:** for the calling convention and a verified cheat-sheet,
+> see [AGENTS.md](../AGENTS.md).
+
 Follow along by typing the script into a file as we grow it. We will
 build it up in pieces and run it after each step.
 

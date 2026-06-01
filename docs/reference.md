@@ -6,6 +6,9 @@ stack signature, and what it returns. For *why* the filter behaves the
 way it does, see [Explanation](explanation.md); for goal-directed
 recipes, see the [How-to guides](how-to.md).
 
+> **AI agents:** [AGENTS.md](../AGENTS.md) condenses the calling
+> convention, idioms, and common mistakes for machine use.
+
 The module exports a single namespace, `Bloom`, plus two types. Import
 it with:
 

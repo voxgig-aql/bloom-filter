@@ -16,6 +16,12 @@ def _ (seen Bloom.add "ada" end)
 (seen Bloom.contains "linus" end) print   # => false
 ```
 
+> **Calling this library from an AI coding agent?** Read
+> **[AGENTS.md](AGENTS.md)** first — the exact AQL calling convention,
+> verified idioms, and common mistakes. (Claude Code auto-loads it via
+> `CLAUDE.md`; a portable skill lives in
+> [`.claude/skills/bloom-filter-aql`](.claude/skills/bloom-filter-aql/SKILL.md).)
+
 ## Documentation
 
 The docs follow the [Diátaxis](https://diataxis.fr) framework — four
