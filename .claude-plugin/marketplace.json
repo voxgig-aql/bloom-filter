@@ -1,0 +1,14 @@
+{
+  "name": "voxgig-aql",
+  "owner": { "name": "voxgig-aql" },
+  "description": "Plugins for the voxgig AQL ecosystem.",
+  "plugins": [
+    {
+      "name": "bloom-filter-aql",
+      "source": "./plugins/bloom-filter-aql",
+      "description": "Agent guidance for using the Bloom bloom-filter library from AQL.",
+      "version": "0.1.0",
+      "license": "MIT"
+    }
+  ]
+}

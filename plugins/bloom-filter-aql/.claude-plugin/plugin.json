@@ -1,0 +1,10 @@
+{
+  "name": "bloom-filter-aql",
+  "description": "Agent guidance for calling the Bloom bloom-filter library correctly from AQL: the calling convention, the API with mutation and probabilistic semantics, verified copy-paste idioms, and fixes for common mistakes.",
+  "version": "0.1.0",
+  "author": { "name": "voxgig-aql" },
+  "homepage": "https://github.com/voxgig-aql/bloom-filter",
+  "repository": "https://github.com/voxgig-aql/bloom-filter",
+  "license": "MIT",
+  "keywords": ["aql", "bloom-filter", "skill", "agent"]
+}

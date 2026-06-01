@@ -52,6 +52,30 @@ filters and just want the API? Jump to the [Reference](docs/reference.md).
 Full details, including the calling convention (every call ends with
 `end`), are in the [Reference](docs/reference.md).
 
+## For AI coding agents
+
+If an agent will call this library, point it at **[AGENTS.md](AGENTS.md)**
+— the exact AQL calling convention, verified idioms, and the common
+mistakes to avoid.
+
+To make that guidance available in *another* project that uses this
+library, install the bundled skill either way:
+
+- **Copy the skill** — drop
+  [`.claude/skills/bloom-filter-aql/`](.claude/skills/bloom-filter-aql/SKILL.md)
+  into that project's `.claude/skills/` (or your `~/.claude/skills/`). It
+  loads on demand whenever Bloom calls appear.
+- **Install the plugin** — this repo is also a plugin marketplace:
+
+  ```
+  /plugin marketplace add voxgig-aql/bloom-filter
+  /plugin install bloom-filter-aql@voxgig-aql
+  ```
+
+Working inside *this* repo, Claude Code picks the guidance up
+automatically via `CLAUDE.md` (which imports `AGENTS.md`) and the bundled
+skill.
+
 ## Project layout
 
 ```
