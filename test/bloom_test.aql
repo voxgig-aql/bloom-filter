@@ -101,6 +101,15 @@
 ] "merge-union" test.test end
 
 
+# --- merge: mismatched (m, k) is rejected --------------------------
+
+[
+  def a ({n: 1000, p: 0.01} Bloom.make end)
+  def b ({n:  500, p: 0.01} Bloom.make end)
+  [a b Bloom.merge end] assert.throws end
+] "merge-mismatch-throws" test.test end
+
+
 # --- summary -------------------------------------------------------
 
 "---" print

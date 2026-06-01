@@ -1770,6 +1770,32 @@ panic, or the way stack residue prints at program end. Not a
 blocker, but it makes "where does this output come from" hard to
 read in test output.
 
+**Status after `5b983b6` (fourth pass):** **open, and broader than
+"mixed `print`/`printstr`".** Pure `print` reorders too — the
+program's *first* printed line is consistently emitted **last**:
+
+```
+$ aql do '"A" print "B" print "C" print "D" print'
+B
+C
+D
+A
+```
+
+`B C D` are in order; `A`, the first, is rotated to the end. The
+same thing makes `index.aql`'s banner and the docs' first label come
+out last. Two reliable workarounds, both used in this repo's
+`docs/tutorial.md`:
+
+1. Emit one throwaway line first — `"" print` — so the *blank* line
+   takes the rotated-to-end slot and every real line stays ordered.
+2. Build the whole output as a single `\n`-joined interpolated
+   string and `print` it once.
+
+This looks like an off-by-one in the output flush/queue rather than
+a buffering race, since it is deterministic. Worth a `lang/go/test`
+that asserts N prints emit in source order.
+
 ### 9.4 `length` only works on Lists; strings need `size` [fixed]
 
 ```
@@ -1869,6 +1895,61 @@ printable-ASCII alphabet trick: `alphabet c indexof 32 add`. This
 is brittle (non-ASCII silently maps to wrong codes) and slow
 (`O(95)` per char). Built-in `ord`/`chr` words on `Scalar` would
 help.
+
+### 9.10 No way to raise a custom error [open — new at `5b983b6`]
+
+In earlier builds the library raised precondition failures with the
+string-and-`error` form `"bloom.merge: m mismatch" error`. At
+`5b983b6` that no longer works: `error` has been **redefined as an
+error-handling combinator**, not a raise.
+
+```
+$ aql describe error
+error — Precedence: forward
+  Signatures: [ [List Error]  Any ]
+```
+
+Its documented use is `do [risky] error [handler]` — run a body,
+and if it produced an error value, run the handler with that error
+on the stack (HOWTO §"Handle errors", REFERENCE line 530). So
+`"msg" error` now fails its own signature check (`no matching
+signature for error`), which is what a mismatched `Bloom.merge`
+started throwing — a confusing error *about `error`* rather than the
+intended message.
+
+The gap: there is **no replacement word that raises a custom
+message**. None of `raise` / `throw` / `fail` / `panic` exist in the
+native set, and an Error value can't be constructed either
+(`make Error {…}` → `unsupported target type Error`,
+`convert Error` → no signature). The only AQL-level ways to produce
+a *catchable* failure are to trigger a built-in error (`1 0 div`,
+undefined word, type mismatch) — none of which let you attach a
+message.
+
+**Workaround used in this repo.** `bloom-merge` now raises by
+dispatching a descriptively-named word that is deliberately left
+undefined:
+
+```aql
+if (m-ok not) [ bloom-merge-requires-equal-m ] [ … ]
+```
+
+The resulting `undefined_word: bloom-merge-requires-equal-m` is
+catchable (`do […] error […]`, `assert.throws`) and its *text names
+the violated precondition* — the closest thing to a custom message
+available. It is a hack: the error class says "undefined word,"
+which reads like an implementation bug rather than a contract
+violation. The undefined word inside an untaken branch is lazy — it
+does not break loading or the happy path, only fires when the branch
+runs.
+
+**Recommendation:** restore a first-class raise — e.g. `"msg" fail`
+or `{name, message} raise` producing a catchable Error — and/or make
+`make Error {…}` work so a fn can build and return one. Removing
+string-raise without a replacement is a real regression for any
+library that validates its inputs. (The decision module's
+return-a-`{ok, error}`-map convention is the functional alternative,
+but it changes a word's return type and isn't always appropriate.)
 
 ---
 
