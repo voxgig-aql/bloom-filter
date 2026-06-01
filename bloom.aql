@@ -264,6 +264,16 @@ def bloom-encode fn [
 
 # --- merge ----------------------------------------------------------
 
+# Merge requires both filters to share the same bit width (m) and hash
+# count (k) — the natural outcome of building them with the same
+# (n, p). On a mismatch we raise. Note: aql 5b983b6 redefined `error`
+# as an error-*handler* combinator (`do [risky] error [handler]`) and
+# removed the old string-raising form, with no replacement word for
+# raising a custom message (dx-report §9.10). The catchable idiom that
+# remains is to dispatch a descriptively-named word that isn't defined;
+# the raised `undefined_word: <name>` carries the failed precondition
+# as its text, and callers can trap it with `do […] error […]` or
+# `assert.throws`.
 def bloom-merge fn [
   [b:BloomFilter a:BloomFilter] [BloomFilter] [
     def am a.m
@@ -273,10 +283,10 @@ def bloom-merge fn [
     def m-ok (am bm eq)
     def k-ok (ak bk eq)
     if (m-ok not) [
-      "bloom.merge: m mismatch" error
+      bloom-merge-requires-equal-m
     ] [
       if (k-ok not) [
-        "bloom.merge: k mismatch" error
+        bloom-merge-requires-equal-k
       ] [
         def a-bits a.bits
         def b-bits b.bits
