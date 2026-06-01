@@ -56,6 +56,7 @@ test/bloom_prop_test.aql   property-based tests — direct (test.check-prop)
 test/bloom_prop_spec.aql   property-based tests — declarative spec format
 test/bloom_smoke_test.aql  end-to-end smoke run over every public word
 docs/                      Diátaxis documentation (above)
+dx-report.md               developer-experience notes against aql @ 5b983b6
 ```
 
 Test files follow a consistent naming convention: `_test.aql` for
