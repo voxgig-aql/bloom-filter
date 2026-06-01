@@ -50,6 +50,7 @@ Full details, including the calling convention (every call ends with
 
 ```
 bloom.aql                  the library (the Bloom namespace)
+AGENTS.md                  agent guide: how to call this library correctly
 test/bloom_unit_test.aql   example-based unit tests — direct (test.test)
 test/bloom_unit_spec.aql   example-based unit tests — declarative spec format
 test/bloom_prop_test.aql   property-based tests — direct (test.check-prop)
