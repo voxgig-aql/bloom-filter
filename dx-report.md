@@ -2145,24 +2145,33 @@ declarative layers are now usable and worth documenting prominently:
    Boolean. Failures are recorded into `test.fail-count` and the
    result carries the (shrunk) `failing-input`.
 
-This repo's new `test/bloom_prop_test.aql` exercises both surfaces:
-seven bloom-filter invariants as `PropertySpec`s — no false
-negatives, empty-filter emptiness, well-formed/round-tripped
-params, bulk membership, merge membership, empty-count-is-zero. Two
-gaps surfaced while writing it, both noted inline in that file:
+This repo exercises **both** surfaces, deliberately split across two
+files so each one stays pure:
+
+- `test/bloom_prop_spec.aql` — the **declarative spec format**:
+  `PropertySpec`s built with `test.prop` and run with
+  `test.run-property`, assembled as a list of spec values.
+- `test/bloom_pbt.aql` — the **direct-code form**: the imperative
+  `test.check-prop` driver called inline with explicit
+  `runs`/`seed`/`max-shrinks`.
+
+Two gaps surfaced while writing them, and they are exactly what
+motivated the split:
 
 - **`set` won't mutate the `PropertySpec` map**, so there is no
   ergonomic way to override `runs` on a spec built by `test.prop`
-  (it fixes `runs=100`). Driving the O(m) properties at a smaller
-  iteration count meant dropping to `test.check-prop`, which takes
-  `runs` positionally. A `test.run-property-n spec runs` overload
-  (or a settable map) would let the whole suite stay on the
+  (it fixes `runs=100`); `convert Object` and `merge`-with-`{runs:N}`
+  both fail or corrupt the spec. So the declarative file is limited
+  to properties that are fine at 100 runs, and the expensive ones
+  that need a smaller budget live in the direct-code file, which
+  takes `runs` positionally. A `test.run-property-n spec runs`
+  overload (or a settable map) would let the whole suite stay on the
   spec-construct-then-run shape.
 - **The interpreter makes O(m) properties expensive to repeat.** A
   full m-bit scan (merge, count, encode) at 100 iterations over a
   realistically-sized filter (m≈9586) does not complete in a
-  reasonable time, which is why those properties run at ~20
-  iterations on a smaller filter. Not a correctness issue, but it
+  reasonable time, which is why the direct-code file runs those at
+  ~10 iterations on a smaller filter. Not a correctness issue, but it
   caps how hard property tests can lean on the slow paths.
 
 ---

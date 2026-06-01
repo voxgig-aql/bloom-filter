@@ -1,9 +1,18 @@
-# Property-based tests for bloom-filter using aql:test's
-# `test.check-prop`. Each property runs a generator body, feeds the
-# generated value into the property body, and asserts the property
-# returns Boolean true across many trials.
+# Property-based tests for bloom-filter — DIRECT-CODE FORM.
+#
+# This file deliberately exercises one of aql:test's two property-test
+# surfaces: the imperative `test.check-prop` driver, called directly in
+# code with explicit run / seed / shrink counts —
 #
 #   test.check-prop NAME  [GEN-BODY]  [PROP-BODY]  RUNS  SEED  MAX-SHRINKS
+#
+# The sibling file `test/bloom_prop_spec.aql` covers the SAME idea
+# through the other surface — the declarative `PropertySpec` built by
+# `test.prop` and run by `test.run-property`. Keeping both is on
+# purpose: together they exercise both halves of the framework. Because
+# this form takes RUNS explicitly, it carries the expensive O(m)
+# properties (merge, encode) at a smaller run budget than the
+# declarative form's fixed default of 100.
 #
 # GEN-BODY: code that runs with `r` bound to the random source; must
 #           leave exactly one value on the stack (the input).
