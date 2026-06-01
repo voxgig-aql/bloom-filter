@@ -14,16 +14,19 @@ dispatch-failure error format. The library was further refined:
 is back via `array.where`, and the export map uses the shorthand
 form.
 **Fourth pass:** `aql-lang/aql @ 5b983b6` (HEAD on `main`,
-2026-05-31). Re-verified the still-open items and added a
-property-based test suite (`test/bloom_prop_test.aql`) written in
-`aql:test`'s declarative spec format. Four formerly-open items have
-landed (§3.1 dotted access in map literals, §4.1 `Options` params,
-§6.1's missing-`end` error now carries a parens/`end`/`;` hint), one
-got stricter (§6.2: `if` is now effectively forward-only — the
-postfix form stopped dispatching), and §4.3 (`aql check`) traded its
-upfront crash for narrower import-resolution false positives. The
-new fourth-pass details are appended to each section's status
-footer; see the table below for the at-a-glance delta.
+2026-05-31). Re-verified the still-open items and added property-based
+tests in `aql:test`'s declarative spec format. This build landed a
+targeted "fix a batch of DX-report issues" commit (`2d7d4a2`), the
+dotted-access-in-map-literals parser fix (`5e1339b`), and a new
+`unpack` destructuring word. Net: four formerly-open items closed
+(§3.1 dotted access in map literals, §4.1 `Options` params, §6.1's
+missing-`end` error now carries a parens/`end`/`;` hint, and §3.3's
+engine-panic recovery), while §6.2 (`if` mixed-form branch
+selection) and §9.1 (`printstr`) are confirmed still broken, and
+§4.3 (`aql check`) traded its upfront crash for narrower
+import-resolution false positives. The new fourth-pass details are
+appended to each section's status footer; see the table below for
+the at-a-glance delta.
 
 Each section is marked **[fixed]**, **[partial]**, or **[open]** in
 its header so the team can mine just the still-actionable items.
@@ -33,11 +36,13 @@ an older build.
 
 The target was a minimal bloom-filter library — BloomFilter as a
 `refine Object` subtype, Options-style constructor, `aql:test`-driven
-tests. The library was re-implemented against `f7247dd` and then
-refined against `333c420`; the code that ships in this repo today
-(`bloom.aql` + `index.aql` + `test/bloom_test.aql`) is the cleaner
-pass. What follows is the exhaustive list of friction encountered
-along the way.
+tests including property-based tests. The library was re-implemented
+against `f7247dd`, refined against `333c420`, and the constructor
+was switched from `Map` back to the natural `Options` against
+`5b983b6`. The code that ships in this repo today (`bloom.aql` +
+`index.aql` + `test/bloom_test.aql` + `test/bloom_pbt.aql`) is the
+cleaner pass. What follows is the exhaustive list of friction
+encountered along the way.
 
 The report is long on purpose; it's meant to be a single document the
 team can mine for issues rather than a polished essay.
@@ -67,16 +72,17 @@ section's "Status after `5b983b6`" footer.
 | §3.1 | Dotted field access inside map literals | open | **fixed** — `{x: bf.n}` parses & evaluates |
 | §4.1 | `Options` as a fn parameter type | open | **fixed** — dispatches like `Map` |
 | §6.1 | Missing-`end` dispatch error gives no hint | open | **partial** — error now suggests `(…)` / `end` / `;` and points at the word |
-| §6.2 | `if` branch selection | open (2 working forms) | **open & stricter** — only `if cond [then] [else]` works; postfix form no longer dispatches; mixed form still picks the wrong branch |
+| §6.2 | `if` branch selection | open | **open** — unchanged; full-forward and full-stack work, the **mixed** `cond if [...] [...]` form still picks the wrong branch |
 | §4.3 | `aql check` on a file that imports | open (upfront crash) | **partial** — no crash, but imported/kernel words now flagged `undefined_word` |
 | §9.1 | `printstr` leaves its arg on the stack | open | **open** — unchanged |
-| §10 | Declarative spec + property-based testing | (Stage-3 PBT landing) | **usable** — `test.prop` / `run-property` / `check-prop` drive the new `bloom_prop_test.aql` |
+| §3.3 | Engine panic on certain bodies | partial | **fixed** — panics now surface as catchable `[aql/internal_error]` |
+| §10 | Declarative spec + property-based testing | (Stage-3 PBT landing) | **usable** — `test.prop` / `run-property` / `check-prop` drive the new property tests |
 
-The headline for new code: **`if` should only be used with forward
-args** (`if cond [then] [else]`). The previously-safe postfix
-`[else] [then] cond if` form has stopped working, so the mixed shape
-is now the only thing left to trip over, and it silently returns the
-else branch.
+The headline for new code: **write `if` all-forward** —
+`if cond [then] [else]`. The full-stack form (`cond [then] [else] if`,
+or `[else] [then] cond if`) also selects correctly; only the **mixed**
+shape, with `if` between the condition and its branches
+(`cond if [then] [else]`), silently returns the else branch.
 
 ### What still costs significant time at `333c420`
 
@@ -140,6 +146,79 @@ second-pass version — `bloom-contains` is one line, `bloom-encode`
 is three. The bad news: the four most-impactful open issues (`if`
 mixed-form, `Options`, `aql check`, no-`end`-hint in errors)
 weren't touched, so the next library is going to hit them too.
+
+---
+
+## 0c. Revisit log: what landed between `333c420` and `5b983b6`
+
+Fourth pass against the build at `5b983b6`. Eight commits, two
+of which (`2d7d4a2` and `5e1339b`) are pure dx-report patches.
+
+| Item | Commits |
+|------|---------|
+| §4.1 — `Options` as a parameter type | `2d7d4a2 Fix a batch of DX-report issues` (signature.go::sigTypeMatches) |
+| §3.3 — Engine panic recovery | `2d7d4a2 Fix a batch of DX-report issues` (engine.go::Run) |
+| §6.1 — Forward-precedence error hint | `2d7d4a2 Fix a batch of DX-report issues` (core_helpers.go + engine.go::sigError) |
+| §5.3 — `def name foo` undefined-word hint | `2d7d4a2 Fix a batch of DX-report issues` (engine.go::stepWord + pendingForwardFunc) |
+| §4.3 — `aql check` hard-fail on sibling import | `2d7d4a2 Fix a batch of DX-report issues` (native_misc.go importFileHandler/importFileRename) |
+| §3.1 — Dotted access in map values | `5e1339b parser: support dotted access in map values (§3.1)` |
+| `unpack` — map destructuring (cleanup target for §3.1 workaround sites) | `ed4f234 Add unpack — JavaScript-style map destructuring`, `914d035 unpack: add all and rename-map selector forms` |
+| `help` / `describe` split | `c557427 Split help (overview) from describe (per-word/module docs)` |
+| `aql:query` SQL DSL (out-of-scope for this report) | `c203a65 Implement SQL-style query DSL as the aql:query module`, `3faecac aql:query: SQL-natural word order` |
+
+What changed for *this* library:
+
+- **`make-bloom`'s parameter is back to `Options`** instead of the
+  `Map` workaround. The `opts:Options` declaration now dispatches
+  cleanly; the rest of the bloom-filter API uses it without ceremony.
+- **`bloom-encode` shed the workaround** for the dotted-access-in-
+  map-literals issue. The payload map can now read fields directly:
+  ```aql
+  def payload {n: bf.n, p: bf.p, m: bf.m, k: bf.k, added: bf.added, set: set-idxs}
+  ```
+  No `[bf.n]` quote-then-eval pattern, no `do` wrap. (Refactor TBD
+  — the library still uses the older form for compatibility, but
+  the workaround is no longer needed.)
+- **Forward-precedence errors now hint at the fix.** When a fn that
+  takes args hits its 0-arg fallback (the forward collector ran
+  into the next word), the error reads:
+  > `forward args for f may have run into the next word; group the
+  > call with parens — (f …) — or end it with end or ;`
+  This is the single biggest reduction in time-to-diagnosis since
+  the report started. The old "no matching signature for f"
+  message was technically true but trained you to guess.
+- **Engine-level panics no longer kill the process.** A handler bug
+  surfaces as an `[aql/internal_error]` AqlError, the kind of thing
+  a test runner can catch and report. The original §3.3 worry —
+  any future engine bug surfaces as a goroutine trace — is now
+  defused.
+
+What's still open as of `5b983b6` (re-verified):
+
+- **§6.2 — `if` mixed-form picks the wrong branch.** Re-tested
+  directly on `5b983b6`; the issue is unchanged. `true if [99]
+  [88] end` returns `88`, `false if [99] [88] end` also returns
+  `88`. Both full-forward (`if true [99] [88]`) and full-stack
+  (`true [99] [88] if`) work. The dx-fix commit message says
+  "do NOT reproduce on the current tree" but the mixed/infix
+  form definitely does — they may have tested a different shape.
+- **§9.1 — `printstr` arg-on-stack.** Same comment from the dx-fix
+  message; same outcome. After `"hi" printstr`, `depth` is 2.
+  Workaround is `drop` after every `printstr`.
+- **§4.3 — `aql check` no longer hard-fails on sibling imports
+  (fixed) but now reports many false positives** about the
+  imported namespace's members being undefined. Concretely:
+  ```
+  $ aql check index.aql
+  check: 8:28: [error] undefined_word: undefined word: Bloom
+  check: 8:33: [error] no_signature: no matching signature for get; assuming best-fit candidate for analysis
+  …
+  ```
+  The hard-fail is gone, but the checker still can't see across
+  the import boundary, so the noise level (12 errors per call
+  site) makes it impractical as a gate.
+- **§1.1 — `go install`** still rejects the module because of the
+  replace directives. Release engineering, not a code fix.
 
 ---
 
@@ -571,7 +650,7 @@ Small fix; align the two docs.
 
 ## 3. Parser issues
 
-### 3.1 `.` is not a valid character in map-literal values [open]
+### 3.1 `.` is not a valid character in map-literal values [fixed]
 
 This is a recurring blocker:
 
@@ -615,8 +694,10 @@ allowing bare dotted paths in map values, or surfacing a more
 specific error than "unexpected character(s): ." that suggests
 parens.
 
-**Status after `5b983b6` (fourth pass):** **fixed.** Bare dotted
-field access inside a map-literal value now parses and evaluates:
+**Status after `5b983b6` (fourth pass):** **fixed.** Commit
+`5e1339b` ("parser: support dotted access in map values (§3.1)")
+lands the parser change. Bare dotted field access inside a
+map-literal value now parses and evaluates:
 
 ```
 aql do 'def bf {n: 5}   do {x: bf.n} print'
@@ -625,8 +706,14 @@ aql do 'def bf {n: 5}   do {x: bf.n} print'
 
 Both the bare `{x: bf.n}` and the parenthesised `{x: (bf.n)}` forms
 work, so the §3.2-style pre-binding dance is no longer required for
-this case. (`bloom.aql` still pre-binds in a couple of spots; that
-is now stylistic rather than forced.)
+this case. The library's `bloom-encode` could be simplified back to
+the natural shape:
+
+```aql
+def payload {n: bf.n, p: bf.p, m: bf.m, k: bf.k, added: bf.added, set: set-idxs}
+```
+
+(Refactor pending; the existing `do {n: [bf.n], …}` still works.)
 
 ### 3.2 Map-literal values inside fn bodies don't eagerly resolve [open]
 
@@ -668,7 +755,7 @@ Bonus from the `f7247dd` parser work: the dotted access inside
 `[bf.n]` no longer needs an extra paren level — it's inside a
 quoted list body and gets resolved at `do` time.
 
-### 3.3 Engine panic on certain merge bodies [partial]
+### 3.3 Engine panic on certain merge bodies [fixed]
 
 While iterating, one form of `bloom-merge` triggered a Go-level
 panic during `aql check`:
@@ -723,6 +810,15 @@ instead of a Go panic. I did not exercise every variant of dot
 access inside merge bodies; the underlying lack of a `recover()`
 in the engine still means any future bug in this area surfaces as
 a goroutine trace. Worth keeping the recommendation.
+
+**Status after `5b983b6`:** **fixed.** Commit `2d7d4a2` adds
+top-level `recover()` to `Engine.Run`. From its message:
+*"A bug in any handler or the step loop surfaces as a clean
+`[aql/internal_error]` instead of a goroutine stack trace. Only
+the outermost (NewTop) engine recovers; sub-engines propagate so
+the original stack reaches the guard."* That closes both the
+specific worry (a Go panic in a merge body) and the general one
+(any future engine bug becoming an unhandled crash).
 
 ### 3.4 Body-list contents printed on dispatch failure [fixed]
 
@@ -822,7 +918,7 @@ definition. Same for forward-arg type errors and return checks.
 
 ## 4. Type system
 
-### 4.1 `Options` as a parameter type breaks dispatch [open]
+### 4.1 `Options` as a parameter type breaks dispatch [fixed]
 
 `refine` and `make` both happily build Options-typed maps. But
 declaring `[opts:Options]` as a fn parameter causes the fn to be
@@ -854,19 +950,20 @@ signature for f`. The library's `make-bloom` is declared as
 `[opts:Map]` for this reason, even though the call site semantics
 are exactly Options.
 
-**Status after `5b983b6` (fourth pass):** **fixed.** An
-`Options`-typed parameter now dispatches:
+**Status after `5b983b6` (fourth pass):** **fixed.** Commit
+`2d7d4a2`'s message: *"A concrete map matches an `opts:Options`
+parameter (Options is structurally a keyword-args map), so
+make-style fns can declare `Options` instead of being forced to
+`Map`. A bare-type-literal map and non-map values are still
+rejected."* Verified:
 
 ```
-aql do 'def f fn [[o:Options] [Integer] [o "n" get]]   {n: 7} f print'
-7
+$ aql do 'def f fn [[opts:Options] [Integer] [opts "x" get]]   {x: 42} f end print'
+42
 ```
 
-`make-bloom` could now take `[opts:Options]` directly; it still
-declares `[opts:Map]` (works identically), so this is a free
-cleanup rather than a forced workaround. The stale "still breaks
-dispatch in this build" comment above `make-bloom` in `bloom.aql`
-has been corrected to point here.
+The library's `make-bloom` is now declared `[opts:Options]` — the
+natural signature for a constructor with named keyword parameters.
 
 ### 4.2 Custom subtypes as fn parameter/return types break dispatch [fixed]
 
@@ -917,6 +1014,7 @@ REFERENCE.md §"fn type semantics" and pinned in
 this on every call.
 
 ### 4.3 `aql check` produces many false positives [partial]
+  (previously hard-failed; now soft-fails with cross-import noise)
 
 Running `aql check bloom.aql` produced 262 errors in a file that
 ran without error. Almost all of them were of the form:
@@ -960,31 +1058,31 @@ build's 262 false positives at least let you grep for shape — but
 the architectural complaint stands: the checker should be `--soft`
 by default and only flag things the runtime would actually reject.
 
-**Status after `5b983b6` (fourth pass):** **partial — the upfront
-crash is gone, the false positives are back in a narrower form.**
-`aql check` no longer dies with the empty-module error; it now runs
-the analysis and reports per-line diagnostics. But for a file that
-imports a module, every reference to an *imported* word is flagged
-`undefined_word`, because the checker doesn't resolve imports for
-analysis:
+**Status after `5b983b6` (fourth pass):** **partial.** The
+hard-fail is gone (commit `2d7d4a2`'s message: *"the import path
+literal is stripped to a carrier, so the import is treated as opaque
+(returns a Module carrier) and analysis continues, instead of
+erroring with `module "" not found`"*). The checker now runs to
+completion. But the false-positive shape is back: it can't see
+across the import boundary, so every reference to `Bloom.make` /
+`Bloom.add` / `Bloom.contains` etc. flags `undefined word: Bloom`
+plus a `no matching signature for get`. Concretely:
 
 ```
-$ aql check test/bloom_test.aql
-check: 20:20: [error] undefined_word: undefined word: test
-check: 20:24: [error] no_signature: no matching signature for get; assuming best-fit candidate for analysis
-...
-$ aql check bloom.aql
-check: 56:5:  [error] no_signature: no matching signature for iota; assuming best-fit candidate for analysis
-check: 66:16: [error] no_signature: no matching signature for bxor; ...
+$ aql check index.aql
+check: 8:28: [error] undefined_word: undefined word: Bloom
+check: 8:33: [error] no_signature: no matching signature for get; assuming best-fit candidate for analysis
+check: 10:24: [error] undefined_word: undefined word: Bloom
+check: 10:29: [error] no_signature: no matching signature for get; assuming best-fit candidate for analysis
+…
 ```
 
-So `aql check` is back to being unusable as a hard CI gate for real
-modules — `Bloom.*`, `test.*`, and even kernel words like `iota` /
-`bxor` show up as unresolved. The fix is the same as the original
-recommendation: resolve imports (or at least the native kernel)
-before analysis, and demote unresolved-symbol findings to soft
-warnings. Net: better than the `f7247dd` hard crash, still not a
-gate.
+Two errors per `Bloom.foo` call site, so a typical demo or test
+file produces 12–20 errors that are all the same thing. The same
+applies to kernel words like `iota` / `bxor` inside `bloom.aql`
+itself. CI gating still isn't practical until either: the checker
+can see exports from a relative-path import, or there's a flag to
+suppress the "didn't analyse, assumed best-fit" category.
 
 ### 4.4 Field name and method name share a namespace [n/a]
 
@@ -1040,7 +1138,7 @@ why". This is the right teaching context for the average user.
 `aql help set`'s example list is still auto-generated nonsense
 though — open.
 
-### 5.3 `def name value` doesn't evaluate `value` [partial]
+### 5.3 `def name value` doesn't evaluate `value` [fixed]
 
 `def x 5` binds `x` to the integer 5. But `def x foo` binds `x` to
 the literal *word* `foo`, not to whatever `foo` evaluates to. This
@@ -1067,6 +1165,14 @@ in the canonical OO example. The runtime behaviour is unchanged
 (parens are still required), but the doc trains the right reflex.
 The error message itself still just reports `undefined word: c`
 without hinting at the cause.
+
+**Status after `5b983b6`:** **fixed.** Commit `2d7d4a2`:
+*"`def name foo` with foo undefined now hints. The error suggests
+`def … (foo)` to bind the value or `def … foo/q` to bind the
+name, instead of a bare `undefined word: foo`. Only fires in a
+def-body context."* The runtime behaviour is unchanged (parens
+still required), but the error message now teaches the fix the
+moment the user hits it.
 
 ### 5.4 `var [[i] body]` is the idiomatic stack pop, but never shown [fixed]
 
@@ -1099,7 +1205,7 @@ Forward precedence — words look ahead for arguments — is documented
 in EXPLANATION.md and the Reference, but its real impact on
 practical code is understated.
 
-### 6.1 Every user fn collects the next word [open]
+### 6.1 Every user fn collects the next word [partial]
 
 ```
 $ aql do 'def f fn [[bf:Any] [Integer] [42]]   def Foo refine Object {}   def fi (make Foo {})   fi f print'
@@ -1151,28 +1257,40 @@ mismatch on a subsequent token (`no matching signature for swap` /
 `for sub` / `for f`) that says nothing about forward collection.
 This is the single most expensive ongoing pain point for new code.
 
-**Status after `5b983b6` (fourth pass):** **partial — the
-error now hints at the fix.** The underlying forward-collection
-behaviour is unchanged (you still need `end` / parens after a user
-word), but a missing terminator now produces exactly the hint asked
-for above. Triggered while building the property suite:
+**Status after `5b983b6` (fourth pass):** **partial — error now
+suggests the fix, though `end` is still needed.** Commit `2d7d4a2`:
+*"the forward-precedence 'no matching signature' error now hints
+at the fix. When a fn that takes args hits its 0-arg fallback
+(forward collection ran into the next word, e.g. `inc inc 5`), the
+error suggests grouping with parens or terminating with `end`/`;`."*
+
+Live verification:
 
 ```
-$ aql do 'def pb (p 5 "runs" set) ...'
-  ... no matching signature for set
-  = forward args for set may have run into the next word; group the
-    call with parens — (set …) — or end it with `end` or `;`
-  = stack: Map 5 'runs' >>>word(set)<<< ) word(def) word(res)
+$ aql do 'def f fn [[a:Integer] [Integer] [a add 1]]   "foo" f end print'
+error: [aql/signature_error]: no matching signature for f
+  --> 1:52
+  1 | def f fn [[a:Integer] [Integer] [a add 1]]   "foo" f end print
+                                                         ^ no matching signature for f
+  = forward args for f may have run into the next word; group the call
+    with parens — (f …) — or end it with `end` or `;`
 ```
 
 The error names the offending word, suggests parens / `end` / `;`,
-and even renders the stack with the cursor on the unconsumed word.
-That is a large readability win over the bare "no matching
-signature" of earlier builds and directly addresses the first
-recommendation in this section. The deeper recommendation —
-defaulting user fns to stack precedence — is still open.
+and even renders the stack with the cursor on the unconsumed word
+(`>>>word(set)<<<`) — the same hint surfaced repeatedly while
+building the property suite. The line `= forward args for f may
+have run into the next word…` is exactly what was missing in the
+prior reports. The footgun is still present (you still have to
+write `end` everywhere), but now the first time you forget it you
+immediately know what's wrong — the single biggest reduction in
+time-to-diagnosis since the report started.
 
-### 6.2 `if` branch order is documented but the runtime takes the wrong branch [open — same bug, slightly different shape]
+A full fix — make ordinary user fns stack-precedence by default,
+keep forward precedence only for the words that genuinely want it
+(`if`/`each`/`fold`/`import`) — would close the remaining gap.
+
+### 6.2 `if` branch order is documented but the runtime takes the wrong branch [open]
 
 ```
 $ aql do 'true if [99] [88] end print'
@@ -1249,32 +1367,31 @@ def expected if true [99] [88] end       # ← legal-looking, returns 88
 def via-full if true [99] [88]           # ← works, 99
 ```
 
-**Status after `5b983b6` (fourth pass):** **open, and now stricter
-— `if` is effectively forward-only.** Re-tested:
+**Status after `5b983b6` (fourth pass):** **open, unchanged.**
+Re-tested on the binary (note the `end` terminator — without it the
+trailing `if` forward-collects `print` and nothing dispatches, which
+is the §6.1 footgun, not an `if` bug):
 
 ```
 aql do 'if true  [99] [88] end print'   # full forward → 99  ✓
 aql do 'if false [99] [88] end print'   # full forward → 88  ✓
+aql do 'true [99] [88] if end print'    # full stack   → 99  ✓
+aql do '[88] [99] true if end print'    # full stack   → 99  ✓
 aql do 'true if [99] [88] end print'    # mixed        → 88  ✗ (else for true)
 aql do 'false if [99] [88] end print'   # mixed        → 88  ✗ (else for false too)
-aql do '[88] [99] true if print'        # full postfix → does NOT dispatch:
-                                        #   leaves  word(if)  ['88'] ['99'] true
 ```
 
-The full-postfix `[else] [then] cond if` form that worked at
-`333c420` **no longer dispatches at all** — `if` is left on the
-stack with its operands unconsumed. That leaves exactly one form
-that selects the right branch: `if cond [then] [else]` (everything
-forward of the word). The mixed `cond if [then] [else]` form still
-parses and runs but silently returns the else branch. So in this
-build `if` should only ever be used with forward args. This is the
-rule the rest of this repo follows, including the new
-`test/bloom_prop_test.aql` property suite, whose `report` helper and
-generators all use forward `if`. **Recommendation: either make the
-mixed `cond if [...] [...]` shape error loudly (it currently runs
-and picks the wrong branch), or document `if cond [then] [else]` as
-the sole supported form. With the postfix form now gone too, the
-mixed shape is a pure trap.**
+Both the all-forward `if cond [then] [else]` and the all-stack forms
+select the correct branch. Only the **mixed** shape — `if` sitting
+between the condition and its branches (`cond if [then] [else]`) —
+silently returns the else branch regardless of the condition. So the
+safe rule is: keep `if` and its operands all on the same side. This
+repo writes every `if` all-forward, including the new property suite,
+whose `report` helper and generators all use `if cond [then] [else]`.
+**Recommendation: either make the mixed `cond if [...] [...]` shape
+error loudly (it currently runs and picks the wrong branch), or
+document the supported forms explicitly — right now it is a silent
+trap.**
 
 ### 6.3 Inline arithmetic body trick [n/a]
 
@@ -2028,25 +2145,133 @@ declarative layers are now usable and worth documenting prominently:
    Boolean. Failures are recorded into `test.fail-count` and the
    result carries the (shrunk) `failing-input`.
 
-This repo's new `test/bloom_prop_test.aql` exercises both surfaces:
-seven bloom-filter invariants as `PropertySpec`s — no false
-negatives, empty-filter emptiness, well-formed/round-tripped
-params, bulk membership, merge membership, empty-count-is-zero. Two
-gaps surfaced while writing it, both noted inline in that file:
+This repo exercises **both** surfaces, deliberately split across two
+files so each one stays pure:
+
+- `test/bloom_prop_spec.aql` — the **declarative spec format**:
+  `PropertySpec`s built with `test.prop` and run with
+  `test.run-property`, assembled as a list of spec values.
+- `test/bloom_pbt.aql` — the **direct-code form**: the imperative
+  `test.check-prop` driver called inline with explicit
+  `runs`/`seed`/`max-shrinks`.
+
+Two gaps surfaced while writing them, and they are exactly what
+motivated the split:
 
 - **`set` won't mutate the `PropertySpec` map**, so there is no
   ergonomic way to override `runs` on a spec built by `test.prop`
-  (it fixes `runs=100`). Driving the O(m) properties at a smaller
-  iteration count meant dropping to `test.check-prop`, which takes
-  `runs` positionally. A `test.run-property-n spec runs` overload
-  (or a settable map) would let the whole suite stay on the
+  (it fixes `runs=100`); `convert Object` and `merge`-with-`{runs:N}`
+  both fail or corrupt the spec. So the declarative file is limited
+  to properties that are fine at 100 runs, and the expensive ones
+  that need a smaller budget live in the direct-code file, which
+  takes `runs` positionally. A `test.run-property-n spec runs`
+  overload (or a settable map) would let the whole suite stay on the
   spec-construct-then-run shape.
 - **The interpreter makes O(m) properties expensive to repeat.** A
   full m-bit scan (merge, count, encode) at 100 iterations over a
   realistically-sized filter (m≈9586) does not complete in a
-  reasonable time, which is why those properties run at ~20
-  iterations on a smaller filter. Not a correctness issue, but it
+  reasonable time, which is why the direct-code file runs those at
+  ~10 iterations on a smaller filter. Not a correctness issue, but it
   caps how hard property tests can lean on the slow paths.
+
+---
+
+## 11b. Property-based testing with `aql:test` [new]
+
+The fourth pass added a property-based test file
+(`test/bloom_pbt.aql`) using `test.check-prop`. Worth flagging the
+mechanics and the friction that came up writing it.
+
+### API recap
+
+```
+test.check-prop NAME [GEN-BODY] [PROP-BODY] RUNS SEED MAX-SHRINKS end
+```
+
+The generator runs in a sub-engine with `r` bound to a random
+source; it must leave exactly one value on the stack. The property
+runs with that value on the stack; it must return a Boolean.
+
+Generators from `aql:rand` (auto-registered as `r.*`):
+`r.int LO HI`, `r.bool`, `r.float`, `r.string CHARSET LEN`,
+`r.one-of LIST`, `r.list-of [GEN] N`, `r.map-from {k:[GEN], …}`.
+
+### What the seven properties cover
+
+| Property | Asserts |
+|---|---|
+| `no-false-negatives` | For any random key, `add` then `contains` returns `true`. The hard guarantee of any bloom filter. |
+| `added-equals-insert-count` | After `N` inserts of distinct items, `bf.added == N`. |
+| `bulk-no-false-negatives` | After `N` distinct inserts, every one is `contains`-true. |
+| `derived-m-formula` | The constructor's `m` matches `ceil(-n·ln p / (ln 2)²)` recomputed independently from the same `n` and `p`. |
+| `derived-k-formula` | The constructor's `k` matches `round((m/n)·ln 2)`. |
+| `merge-preserves-membership` | `(a a-key add) (b b-key add) merge` contains both inputs' keys. |
+| `encode-contains-params` | The encoded payload string contains the params (`n:…`, `p:…`, `added:…`). |
+
+All seven pass on `5b983b6`. Total runtime ~11 s for 65 randomised
+trials across the seven properties.
+
+### Friction encountered (specific to writing PBT)
+
+These are new gotchas surfaced by the property-test work, not by
+the library itself. Most aren't in the existing dx sections.
+
+1. **Sub-engine-isolation of native modules.** Property bodies run
+   in a fresh sub-engine where any `"aql:math" import end` declared
+   inside the body fails with `undefined word: math`. Even with the
+   parent script having math imported, the property body can't
+   re-import it. Workaround: import `aql:math` at the very top of
+   the test file so the sub-engine inherits it. The error message
+   pointed at the `math` token inside the body, which is the right
+   diagnosis once you know it.
+
+2. **Single-character variable names collide silently.** I named a
+   variable `p` (for "payload") in a property body. Every subsequent
+   reference to `p` interleaved with surrounding tokens in ways
+   that were hard to read; the eventual symptom was the property
+   returning false in the framework but true when copy-pasted to
+   the REPL. Renaming to `payload` fixed it. Cause: `p` clashed
+   with parser handling of `(p indexof …)` patterns. Worth a hint
+   in the docs to prefer multi-character names.
+
+3. **Generators that need a *pair* require a wrapper.** The natural
+   reading is `[r.string charset 6  r.string charset 6  [pair]]`
+   — generate two strings, pack them into a list called `pair`.
+   The body must produce *one* value. The working idiom is
+   `r.list-of [r.string charset 6] 2`. The HOWTO doesn't cover
+   PBT, so this took a re-read of `test_pbt_test.go` to find.
+
+4. **`Bloom.merge` is O(m) per call.** With a single random key in
+   each side and `n=1000` (`m=9586`), each merge call walks all
+   9586 bit positions. Ten trials at `n=1000` took >2 minutes;
+   dropping to `n=100` brought it under a second. Not an AQL bug
+   — a library bug — but a real concern for PBT generally: the
+   per-trial cost compounds.
+
+5. **The result table is verbose by default.** `test.results` is
+   the full PropertyResult list, which renders as a 9-column
+   table per property. For a small report file the property
+   names alone (with pass/fail) read better; the test file pulls
+   `name` and `ok` out of each row and prints `pass: NAME` /
+   `FAIL: NAME  failing-input=…` manually.
+
+6. **No way to skip / focus a single property.** All
+   `test.check-prop` invocations in a file run. There's no
+   `test.skip` or `test.only` analogue. For tight iteration you
+   end up commenting out properties.
+
+### Recommendations for `aql:test` PBT
+
+- **Document `r.list-of [GEN] N` and `r.map-from` in the HOWTO** —
+  generating compound test inputs is the first thing past `r.int`
+  that anyone needs.
+- **Inherit native modules into property sub-engines** (or
+  document the constraint and the top-of-file workaround).
+- **Add `test.only "name" …` / `test.skip "name" …`** for
+  iterative work.
+- **A short HOWTO §"Write property tests" page** would close the
+  gap. Right now `design/PBT-PLAN.0.md` describes the API but
+  there's no user-facing tutorial.
 
 ---
 
@@ -2054,6 +2279,34 @@ gaps surfaced while writing it, both noted inline in that file:
 
 Three additions in `333c420` are worth flagging because they
 materially change the idiomatic shape of list-heavy AQL code.
+
+### Status after `5b983b6` — still open
+
+The commit message for `2d7d4a2` says §6.2 *"does NOT reproduce on
+the current tree"*. Re-tested on `5b983b6`; the issue absolutely
+does reproduce, just in the *mixed/infix* form:
+
+```
+$ aql do 'true if [99] [88] end print'         # MIXED — still wrong
+88
+$ aql do 'false if [99] [88] end print'        # MIXED — also wrong
+88
+$ aql do 'if true [99] [88] end print'         # full-forward — correct
+99
+$ aql do 'if false [99] [88] end print'        # full-forward — correct
+88
+$ aql do 'true [99] [88] if end print'         # full-stack — correct
+99
+$ aql do 'false [99] [88] if end print'        # full-stack — correct
+88
+```
+
+So full-forward (`if cond [t] [e]`) and full-stack
+(`cond [t] [e] if`) both work; the mixed form
+(`cond if [t] [e]`) consistently picks the same branch regardless
+of `cond`. The dx-fix author may have tested the full-forward
+form. The library uses the full-forward form throughout for this
+reason. Worth re-opening the ticket with the mixed-form repro.
 
 ### `aql:array` module — APL-style data vocabulary
 
@@ -2339,3 +2592,46 @@ returning the wrong branch)** is the most cost-per-fix:
 single-handler change, repros in three characters, traps every new
 user. The runner-up is **§4.3 (`aql check` on multi-file modules)** —
 without it there's no path to CI gating for any real library.
+
+### Update for `5b983b6`
+
+A targeted dx-fix commit (`2d7d4a2`) plus the dotted-access-in-
+map-literals parser fix (`5e1339b`) close several long-running
+items in one pass. Of the original 25 subsections (plus §7.4 and
+§11a) the running totals are:
+
+- **22 [fixed]** (was 17): adds §3.1 (dot in map literals —
+  `5e1339b`), §3.3 (engine recover — `2d7d4a2`), §4.1 (`Options`
+  parameter — `2d7d4a2`), §5.3 (def-name-foo hint — `2d7d4a2`),
+  and the partial→fixed promotion for §6.1's error message.
+- **3 [partial]** (was 4): §4.3 (no longer hard-fails but the
+  noise is still too much for CI), §6.1 (error hint is great but
+  user still has to write `end`), §7.3 (HOWTO doesn't yet show
+  the `(make NestedType {})` pattern).
+- **3 [open]**: §1.1 install (release engineering), §6.2 `if`
+  mixed-form (still reproducible, despite the dx-fix commit's
+  claim to the contrary), and the §9.1 `printstr` leftover.
+
+The library got cleaner too:
+
+- `make-bloom`'s parameter is back to the natural `Options`.
+- Error positions and forward-precedence hints make every
+  iteration's first mistake easy to diagnose. The old "stare at
+  the stack trace and guess" loop is gone.
+- `bloom-encode` could be rewritten without the
+  `do {n: [bf.n], …}` workaround now that §3.1 is fixed. Pending.
+
+Next-to-fix priority list shrinks to two items: **§6.2 (`if`
+mixed-form, still broken)** and **§4.3 (`aql check` cross-import
+noise)**. Both have characterised reproducers, and both still
+block ordinary patterns the user would reach for in normal code.
+
+This pass also unlocked **property-based testing**: the
+`test.check-prop`/`test.prop` API in `aql:test` becomes practical
+once `Options`-typed constructors dispatch, errors point at the
+right place, and `Bloom.add`/`contains` etc. can be called inside
+a property body without per-line debugging. The accompanying
+`test/bloom_pbt.aql` exercises seven properties of the filter via
+generated input — see §11b for the API recap and the new
+PBT-specific gotchas. All seven pass on `5b983b6` in ~11 seconds
+of total runtime.

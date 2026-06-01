@@ -43,7 +43,7 @@ aql index.aql
 ```
 
 This module is verified against aql commit `5b983b6`; the CI workflow
-(`.github/workflows/test.yml`) pins the same commit.
+(`ci/test.yml`) pins the same commit.
 
 ---
 
@@ -198,17 +198,24 @@ worked example you can copy from.
 
 ## Run the tests
 
-Three suites ship with the module. Run them with `aql`:
+Four suites ship with the module. Run them with `aql`:
 
 ```bash
 aql test/bloom_test.aql        # example-based unit tests (aql:test)
-aql test/bloom_prop_test.aql   # property-based tests (PropertySpec format)
+aql test/bloom_prop_spec.aql   # property tests — declarative spec format
+aql test/bloom_pbt.aql         # property tests — direct test.check-prop form
 aql index.aql                  # smoke demo / end-to-end walk-through
 ```
 
+The two property suites are intentionally separate: they exercise the
+two ways `aql:test` drives property checks. `bloom_prop_spec.aql` builds
+each property as a declarative `PropertySpec` (`test.prop`) and runs it
+with `test.run-property` at the default 100 iterations — clean, but the
+run count is fixed. `bloom_pbt.aql` calls the imperative
+`test.check-prop` driver directly, passing `runs`/`seed`/`max-shrinks`
+explicitly, which is why it carries the expensive O(m) properties
+(merge, encode) at a smaller run budget.
+
 Each test file ends by asserting `test.fail-count` is `0`, so a failure
 makes `aql` exit non-zero — which is exactly what the
-[CI workflow](../.github/workflows/test.yml) checks on every push and
-pull request. The property suite runs the O(m) properties (merge, count)
-at a reduced iteration count because a full bit scan is expensive to
-repeat; see the comments at the top of `test/bloom_prop_test.aql`.
+[CI workflow](../ci/test.yml) checks on every push and pull request.

@@ -69,8 +69,11 @@ jobs:
       - name: Unit tests
         run: aql test/bloom_test.aql
 
-      - name: Property tests
-        run: aql test/bloom_prop_test.aql
+      - name: Property tests (spec format)
+        run: aql test/bloom_prop_spec.aql
+
+      - name: Property tests (PBT)
+        run: aql test/bloom_pbt.aql
 
       - name: Smoke demo
         run: aql index.aql

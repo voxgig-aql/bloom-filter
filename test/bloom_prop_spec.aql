@@ -1,0 +1,132 @@
+# Property-based tests for bloom-filter — DECLARATIVE SPEC FORMAT.
+#
+# This file deliberately exercises one of aql:test's two property-test
+# surfaces: the declarative `PropertySpec`. `test.prop` builds a spec as
+# *data* —
+#
+#   test.prop NAME [GEN-BODY] [PROPERTY-BODY]   →   PropertySpec map
+#
+# — which `test.run-property` then runs (at the default 100 iterations).
+# Specs are values, so we assemble them into a list and run the list.
+#
+# The sibling file `test/bloom_pbt.aql` covers the SAME idea through the
+# other surface — the imperative `test.check-prop` driver, called
+# directly with explicit run/seed/shrink counts. Keeping both is on
+# purpose: together they exercise both halves of the framework. The
+# split also mirrors a real trade-off — the declarative form is
+# clean but fixes `runs` at 100, so the expensive O(m) properties
+# (merge, encode) that need a smaller run budget live in the
+# direct-code file, while the naturally cheap O(k) invariants live here.
+#
+# GEN-BODY runs with `r` (a seeded aql:rand instance) in scope and must
+# leave exactly one value on the stack. PROPERTY-BODY takes that value
+# and must return a Boolean. A single false (or an error) fails the
+# property and reports the offending input.
+#
+# `if` is written all-forward (`if cond [then] [else]`) throughout; see
+# dx-report.md §6.2.
+#
+# Run:
+#   aql test/bloom_prop_spec.aql
+
+
+"aql:test"   import end
+"./bloom.aql" import end
+
+
+# --- shared generators ---------------------------------------------
+
+# Printable charset for random keys, and a discrete set of valid false-
+# positive rates. p is kept in (0, 0.5] so the derived k is always >= 1.
+def charset "abcdefghijklmnopqrstuvwxyz0123456789-_"
+def plist   [0.001 0.005 0.01 0.02 0.05 0.1 0.2 0.5]
+
+
+# --- reporting helper ----------------------------------------------
+
+# Print one PropertyResult as a pass/fail line.
+def report fn [
+  [res:Map] [] [
+    def ok (res "ok" get)
+    def nm (res "name" get)
+    def msg (if ok
+      [`ok   ${nm} (${(res "runs" get)} runs)`]
+      [`FAIL ${nm}  failing-input: ${(res "failing-input" get)}`])
+    msg print
+  ]
+]
+
+
+# --- the spec suite, built as data ---------------------------------
+#
+# Each entry is a PropertySpec value. All are O(k) or O(make) per
+# iteration, so the default 100-run budget is comfortable.
+
+def specs [
+
+  # 1. No false negatives: a key that was just added is always found.
+  (test.prop "add-then-contains"
+    [ r.string charset (r.int 1 16) ]
+    [ var [[key]
+        def bf ({n: 1000, p: 0.01} Bloom.make end)
+        def _ (bf key Bloom.add end)
+        (bf key Bloom.contains end)
+    ] ])
+
+  # 2. A fresh filter (no bits set) reports every key as absent.
+  (test.prop "empty-contains-nothing"
+    [ r.string charset (r.int 1 16) ]
+    [ var [[key]
+        def bf ({n: 1000, p: 0.01} Bloom.make end)
+        ((bf key Bloom.contains end) not)
+    ] ])
+
+  # 3. make derives well-formed params for any (n, p): m >= 1, k >= 1,
+  #    and there are at least as many bits as hash functions (m >= k).
+  (test.prop "params-well-formed"
+    [ do { n: [r.int 10 2000], p: [plist r.one-of] } ]
+    [ var [[opts]
+        def ps ((opts Bloom.make end) Bloom.params end)
+        def m (ps "m" get)
+        def k (ps "k" get)
+        ((1 lte m) and ((1 lte k) and (k lte m)))
+    ] ])
+
+  # 4. params round-trips the constructor inputs: reported n and p are
+  #    exactly what make was given.
+  (test.prop "params-round-trip"
+    [ do { n: [r.int 10 2000], p: [plist r.one-of] } ]
+    [ var [[opts]
+        def ps ((opts Bloom.make end) Bloom.params end)
+        (((ps "n" get) eq (opts "n" get)) and ((ps "p" get) eq (opts "p" get)))
+    ] ])
+
+  # 5. Bulk no false negatives: every key in a randomly-sized batch is
+  #    found after the whole batch is inserted.
+  (test.prop "bulk-add-all-found"
+    [ r.list-of [ r.string charset (r.int 1 12) ] (r.int 1 20) ]
+    [ var [[items]
+        def bf ({n: 1000, p: 0.01} Bloom.make end)
+        def _ (items each [ var [[it] bf it Bloom.add end 0 ] ])
+        (items each [ var [[it] (bf it Bloom.contains end) ] ] all end)
+    ] ])
+
+]
+
+
+# --- run every spec ------------------------------------------------
+
+def _ (specs each [
+  var [[s]
+    (s test.run-property end) report
+    0
+  ]
+])
+
+
+# --- summary -------------------------------------------------------
+
+"---" print
+"fail count: " print test.fail-count end print
+0 test.fail-count end assert.equal end
+"all green" print

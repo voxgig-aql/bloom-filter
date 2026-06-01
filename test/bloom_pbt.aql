@@ -1,0 +1,221 @@
+# Property-based tests for bloom-filter — DIRECT-CODE FORM.
+#
+# This file deliberately exercises one of aql:test's two property-test
+# surfaces: the imperative `test.check-prop` driver, called directly in
+# code with explicit run / seed / shrink counts —
+#
+#   test.check-prop NAME  [GEN-BODY]  [PROP-BODY]  RUNS  SEED  MAX-SHRINKS
+#
+# The sibling file `test/bloom_prop_spec.aql` covers the SAME idea
+# through the other surface — the declarative `PropertySpec` built by
+# `test.prop` and run by `test.run-property`. Keeping both is on
+# purpose: together they exercise both halves of the framework. Because
+# this form takes RUNS explicitly, it carries the expensive O(m)
+# properties (merge, encode) at a smaller run budget than the
+# declarative form's fixed default of 100.
+#
+# GEN-BODY: code that runs with `r` bound to the random source; must
+#           leave exactly one value on the stack (the input).
+# PROP-BODY: code that runs with the generated input on the stack;
+#           must return a Boolean.
+#
+# Run:
+#   aql test/bloom_pbt.aql
+
+
+"aql:test"   import end
+"aql:array"  import end
+"aql:math"   import end
+"./bloom.aql" import end
+
+
+# Shared character set for generated keys.
+def charset "abcdefghijklmnopqrstuvwxyz0123456789"
+
+
+# --- P1. No false negatives ----------------------------------------
+#
+# For every randomly-generated key, after inserting it into a fresh
+# filter, `contains` returns true. This is the bloom filter's hard
+# guarantee — any failure here is a correctness bug.
+
+test.check-prop "no-false-negatives"
+  [r.string charset 8]                                # gen: 8-char key
+  [
+    var [[s]
+      def bf ({n: 1000, p: 0.01} Bloom.make end)
+      def _ (bf s Bloom.add end)
+      bf s Bloom.contains end
+    ]
+  ]
+  10 1 0
+end
+
+
+# --- P2. added counter tracks insertion count ---------------------
+#
+# After inserting N distinct items, bf.added == N. (The keys are
+# generated to be distinct via the iota index.)
+
+test.check-prop "added-equals-insert-count"
+  [r.int 1 50]                                        # gen: N in [1, 50]
+  [
+    var [[n]
+      def bf ({n: 1000, p: 0.01} Bloom.make end)
+      def _ (iota n each [
+        var [[i]
+          def key (convert String i)
+          def _2 (bf key Bloom.add end)
+          0
+        ]
+      ])
+      (bf "added" get) n eq
+    ]
+  ]
+  10 1 0
+end
+
+
+# --- P3. all inserted items are contained --------------------------
+#
+# Combines P1 and P2 over a generated list of keys: every one of the
+# N inserted distinct keys is contained in the filter afterwards.
+
+test.check-prop "bulk-no-false-negatives"
+  [r.int 5 30]                                        # gen: N in [5, 30]
+  [
+    var [[n]
+      def bf ({n: 1000, p: 0.01} Bloom.make end)
+      def _ (iota n each [
+        var [[i]
+          def key (convert String i)
+          def _2 (bf key Bloom.add end)
+          0
+        ]
+      ])
+      def hits (iota n each [
+        var [[i]
+          def key (convert String i)
+          if (bf key Bloom.contains end) [1] [0]
+        ]
+      ])
+      n (0 hits [add end] fold) eq
+    ]
+  ]
+  10 1 0
+end
+
+
+# --- P4. derive-m / derive-k match the textbook formulas ----------
+#
+# For any valid (n, p), the constructed filter's m and k satisfy:
+#   m == ceil(-n * ln(p) / (ln 2)^2)
+#   k == round((m/n) * ln 2)
+# Re-deriving these inside the property uses the same math but is
+# computed independently of make-bloom.
+
+test.check-prop "derived-m-formula"
+  [r.int 100 5000]                                    # gen: n in [100, 5000]
+  [
+    var [[n]
+      def p 0.01
+      def bf ({n: n, p: p} Bloom.make end)
+      def lnp (p math.log)
+      def ln2 (2 math.log)
+      def num (n math.negate convert Decimal mul lnp)
+      def den (ln2 mul ln2)
+      def m-expected (num div den math.ceil)
+      m-expected bf.m eq
+    ]
+  ]
+  10 1 0
+end
+
+test.check-prop "derived-k-formula"
+  [r.int 100 5000]                                    # gen: n in [100, 5000]
+  [
+    var [[n]
+      def p 0.01
+      def bf ({n: n, p: p} Bloom.make end)
+      def ln2 (2 math.log)
+      def k-expected (bf.m convert Decimal mul ln2 div n math.round)
+      k-expected bf.k eq
+    ]
+  ]
+  10 1 0
+end
+
+
+# --- P5. merge of (a, b) contains every item added to either -----
+#
+# Insert one item into each of two same-(n,p) filters, merge them,
+# and verify both items are contained in the merged result.
+#
+# We use a small filter (n=100) here because `Bloom.merge` is O(m)
+# per call (it walks every bit), so even modest runs add up at
+# n=1000 / m=9586.
+
+test.check-prop "merge-preserves-membership"
+  [r.list-of [r.string charset 6] 2]                  # gen: [a-key, b-key]
+  [
+    var [[pair]
+      def a-key (pair get 0)
+      def b-key (pair get 1)
+      def a ({n: 100, p: 0.05} Bloom.make end)
+      def b ({n: 100, p: 0.05} Bloom.make end)
+      def _a (a a-key Bloom.add end)
+      def _b (b b-key Bloom.add end)
+      def merged (a b Bloom.merge end)
+      def has-a (merged a-key Bloom.contains end)
+      def has-b (merged b-key Bloom.contains end)
+      has-a has-b and
+    ]
+  ]
+  10 1 0
+end
+
+
+# --- P6. encode is non-empty and round-trips structural invariants -
+#
+# After inserting random items, the encoded payload string contains
+# the params (`n:`, `p:`, `m:`, `k:`) and an `added:` count that
+# matches what we asked for.
+
+# Encode walks every bit (O(m) per call), so we keep n small and
+# the run count low.
+test.check-prop "encode-contains-params"
+  [r.string charset 8]
+  [
+    var [[s]
+      def bf ({n: 100, p: 0.05} Bloom.make end)
+      def _ (bf s Bloom.add end)
+      def payload (bf Bloom.encode end)
+      def has-n   ("n:100"   payload indexof 0 gte)
+      def has-fp  ("p:0.05"  payload indexof 0 gte)
+      def has-a   ("added:1" payload indexof 0 gte)
+      has-n has-fp and has-a and
+    ]
+  ]
+  5 1 0
+end
+
+
+# --- summary -------------------------------------------------------
+
+"---" print
+"results:" print
+def all-results (test.results end)
+def _print-results (all-results each [
+  var [[r]
+    def nm (r "name" get)
+    def ok (r "ok" get)
+    if ok [
+      `  pass: ${nm}` print
+    ] [
+      `  FAIL: ${nm}  failing-input=${r "failing-input" get}` print
+    ]
+    0
+  ]
+])
+"fail count: " print (test.fail-count end) print
+0 (test.fail-count end) assert.equal end
