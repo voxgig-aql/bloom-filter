@@ -127,7 +127,9 @@ import "aql:string-util"
 `import` collected the `(…)` as its second argument, so the namespace
 never bound. Terminate every import — `import "x" end` — which is what
 this module now does throughout. (On `5b983b6` the bare `import "x"` form
-was fine; this is a behavioural change, not just a style preference.)
+was fine; this is a behavioural change, not just a style preference.) A
+language-level fix that removes the need for the terminator is proposed
+in [`proposals/lazy-arg-resolution.md`](proposals/lazy-arg-resolution.md).
 
 ### N2. 🟢 Custom error raising is still absent
 
