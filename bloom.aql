@@ -98,9 +98,11 @@ def bit-key fn [
 def bit-test fn [
   [i:Integer bits:Bits] [Integer] [
     def k (i bit-key)
-    # `get`/`set` on the bit store stay in stack form: they thread and
-    # mutate the piped store in place, which the forward builtin form
-    # does not do for a `refine Object` param.
+    # The bit store uses stack-form `get`/`set`. As of aql db828ec the
+    # forward form (`bits set k v`) mutates a `refine Object` correctly
+    # at the top level, but does NOT persist when the call runs inside a
+    # `Test.test` sub-engine — so the stack form, reliable everywhere, is
+    # kept (see dx-report.md §1).
     def v (bits k get)
     v otherwise 0
   ]
