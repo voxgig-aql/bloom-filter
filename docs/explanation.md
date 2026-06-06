@@ -162,11 +162,11 @@ it). This is deliberate: a filter is a large accumulator, and copying it
 on every insert would be wasteful. Callers that want an independent copy
 should build a fresh filter.
 
-### Raising errors in aql 5b983b6
+### Raising errors in aql db828ec
 
 `merge`'s precondition check raises by dispatching an undefined,
 descriptively-named word (`bloom-merge-requires-equal-m`). That looks
-odd, and it is a workaround: aql 5b983b6 redefined `error` as an
+odd, and it is a workaround: aql db828ec redefined `error` as an
 error-*handling* combinator (`do [risky] error [handler]`) and removed
 the older string-raising form, leaving no word to raise a custom
 message. Dispatching a word that isn't defined is the remaining way to
@@ -176,7 +176,7 @@ aql restores custom raising, this is the first thing to clean up.
 ### `if` is always written all-forward
 
 Throughout `bloom.aql`, `if` is written `if cond [then] [else]` with
-every argument forward of the word. On aql 5b983b6 both the all-forward
+every argument forward of the word. On aql db828ec both the all-forward
 and the all-stack forms select the correct branch; only the *mixed*
 form, with `if` between the condition and its branches
 (`cond if […] […]`), silently takes the else branch. Keeping `if` and

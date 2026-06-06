@@ -42,7 +42,7 @@ Run any script in this repo by passing its path:
 aql test/bloom_smoke_test.aql
 ```
 
-This module is verified against aql commit `5b983b6`; the CI workflow
+This module is verified against aql commit `db828ec`; the CI workflow
 (`ci/test.yml`) pins the same commit.
 
 ---
@@ -54,7 +54,7 @@ false-positive rate you'll tolerate, in `(0, 0.5]`), and hand them to
 `Bloom.make`:
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql" end
 def bf ({n: 100000, p: 0.001} Bloom.make end)
 (bf Bloom.params end) print
 # => {"k": 10, "m": 1437759, "n": 100000, "p": 0.001}
@@ -151,11 +151,11 @@ Inside the `error` handler the raised value is on the stack; here we
 assert the failure instead:
 
 ```aql
-[a Bloom.merge b end] assert.throws end
+[a Bloom.merge b end] Assert.throws end
 ```
 
 (Why the raised error reads `undefined_word`:
-[Explanation → Raising errors](explanation.md#raising-errors-in-aql-5b983b6).)
+[Explanation → Raising errors](explanation.md#raising-errors-in-aql-db828ec).)
 
 ---
 
@@ -180,11 +180,11 @@ and re-add the items, or read the snapshot's fields yourself.
 ## Use the filter from your own script
 
 Import the library by relative path; you do **not** need to import
-`aql:math` or `aql:array` yourself — `bloom.aql` pulls in its own
+`aql:math-util` or `aql:array-util` yourself — `bloom.aql` pulls in its own
 dependencies:
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql" end
 
 def bf ({n: 1000, p: 0.01} Bloom.make end)
 # … use the Bloom namespace …
@@ -203,30 +203,30 @@ Five suites ship with the module. Run them with `aql`:
 ```bash
 aql test/bloom_unit_test.aql   # example-based unit tests — direct (aql:test)
 aql test/bloom_unit_spec.aql   # example-based unit tests — declarative spec format
-aql test/bloom_prop_test.aql   # property tests — direct test.check-prop form
+aql test/bloom_prop_test.aql   # property tests — direct Test.check-prop form
 aql test/bloom_prop_spec.aql   # property tests — declarative spec format
 aql test/bloom_smoke_test.aql  # end-to-end walk-through over every public word
 ```
 
 The file names follow a consistent convention: `_test.aql` is a direct
-suite (assertions or `test.check-prop` calls written out in code), and
+suite (assertions or `Test.check-prop` calls written out in code), and
 `_spec.aql` is a declarative suite (cases or properties built as data
 and handed to a runner). Both the unit and property layers ship in both
 forms.
 
 The two unit suites express the same example checks two ways:
-`bloom_unit_test.aql` asserts imperatively with `test.test` /
-`assert.equal`, while `bloom_unit_spec.aql` builds each check as a
-`TestSpec` (`test.spec` / `test.case`) that `test.run-spec` dispatches.
+`bloom_unit_test.aql` asserts imperatively with `Test.test` /
+`Assert.equal`, while `bloom_unit_spec.aql` builds each check as a
+`TestSpec` (`Test.spec` / `Test.case`) that `Test.run-spec` dispatches.
 
 The two property suites are likewise split: `bloom_prop_spec.aql` builds
-each property as a declarative `PropertySpec` (`test.prop`) and runs it
-with `test.run-property` at the default 100 iterations — clean, but the
+each property as a declarative `PropertySpec` (`Test.prop`) and runs it
+with `Test.run-property` at the default 100 iterations — clean, but the
 run count is fixed. `bloom_prop_test.aql` calls the imperative
-`test.check-prop` driver directly, passing `runs`/`seed`/`max-shrinks`
+`Test.check-prop` driver directly, passing `runs`/`seed`/`max-shrinks`
 explicitly, which is why it carries the expensive O(m) properties
 (merge, encode) at a smaller run budget.
 
-Each test file ends by asserting `test.fail-count` is `0`, so a failure
+Each test file ends by asserting `Test.fail-count` is `0`, so a failure
 makes `aql` exit non-zero — which is exactly what the
 [CI workflow](../ci/test.yml) checks on every push and pull request.

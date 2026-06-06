@@ -1,23 +1,23 @@
 ---
 name: bloom-filter-aql
-description: Use when writing or editing AQL code that calls the Bloom bloom-filter library — Bloom.make / Bloom.add / Bloom.contains / Bloom.count / Bloom.params / Bloom.merge / Bloom.encode, or any file that does `"./bloom.aql" import`. Provides the exact AQL calling convention (which is not C/Python/JS), the API with mutation and probabilistic semantics, verified copy-paste idioms, and fixes for the mistakes agents most often make (foreign call syntax like `bf.contains(x)`, missing `end` terminators, assuming `add` returns a new filter).
+description: Use when writing or editing AQL code that calls the Bloom bloom-filter library — Bloom.make / Bloom.add / Bloom.contains / Bloom.count / Bloom.params / Bloom.merge / Bloom.encode, or any file that does `import "./bloom.aql" end`. Provides the exact AQL calling convention (which is not C/Python/JS), the API with mutation and probabilistic semantics, verified copy-paste idioms, and fixes for the mistakes agents most often make (foreign call syntax like `bf.contains(x)`, missing `end` terminators, assuming `add` returns a new filter).
 ---
 
 # Calling the Bloom bloom-filter library (AQL)
 
 A probabilistic set: "have I seen this item?" in little memory, with **no
 false negatives** and a tunable false-positive rate. Public surface = the
-`Bloom` namespace. Everything below is verified against `aql @ 5b983b6`.
+`Bloom` namespace. Everything below is verified against `aql @ db828ec`.
 
 ## Import
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql" end
 ```
 
 - Path resolves relative to the **working directory the script runs
   from**, not the importing file. Adjust the relative path accordingly.
-- Do **not** import `aql:math` or `aql:array` — the library does it.
+- Do **not** import `aql:math-util` or `aql:array-util` — the library does it.
 
 ## The one calling rule
 
@@ -36,7 +36,7 @@ dispatch error.
 
 | Call | Returns | Notes |
 |------|---------|-------|
-| `{n: Integer, p: Decimal} Bloom.make end` | `BloomFilter` | `n` = expected distinct items; `p` = target false-positive rate in `(0, 0.5]`. |
+| `{n: Integer, p: Float} Bloom.make end` | `BloomFilter` | `n` = expected distinct items; `p` = target false-positive rate in `(0, 0.5]`. |
 | `bf Bloom.add item end` | the **same** `bf` (mutated in place) | Any value, stringified internally. |
 | `bf Bloom.contains item end` | `Boolean` | `false` = **definitely never added**; `true` = *probably* added (false-positive rate ≈ `p`). |
 | `bf Bloom.count end` | `Integer` | **Estimate** of distinct items, not a tally. Empty ⇒ `0`. |
@@ -50,7 +50,7 @@ read-only.
 ## Idioms (verified)
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql" end
 def seen ({n: 10000, p: 0.01} Bloom.make end)
 def _ (seen Bloom.add "ada" end)
 (seen Bloom.contains "ada"   end) print   # => true

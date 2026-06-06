@@ -7,7 +7,7 @@ items, with no false negatives and a false-positive rate you choose up
 front.
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql" end
 
 def seen ({n: 10000, p: 0.01} Bloom.make end)
 def _ (seen Bloom.add "ada" end)
@@ -81,13 +81,13 @@ skill.
 ```
 bloom.aql                  the library (the Bloom namespace)
 AGENTS.md                  agent guide: how to call this library correctly
-test/bloom_unit_test.aql   example-based unit tests — direct (test.test)
+test/bloom_unit_test.aql   example-based unit tests — direct (Test.test)
 test/bloom_unit_spec.aql   example-based unit tests — declarative spec format
-test/bloom_prop_test.aql   property-based tests — direct (test.check-prop)
+test/bloom_prop_test.aql   property-based tests — direct (Test.check-prop)
 test/bloom_prop_spec.aql   property-based tests — declarative spec format
 test/bloom_smoke_test.aql  end-to-end smoke run over every public word
 docs/                      Diátaxis documentation (above)
-dx-report.md               developer-experience notes against aql @ 5b983b6
+dx-report.md               developer-experience notes against aql @ db828ec
 ```
 
 Test files follow a consistent naming convention: `_test.aql` for

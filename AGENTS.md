@@ -2,7 +2,7 @@
 
 Guidance for an AI coding agent calling this bloom-filter library from an
 AQL project. Every code block below is verified to run against
-`aql-lang/aql` @ `5b983b6`. If you read nothing else, read
+`aql-lang/aql` @ `db828ec`. If you read nothing else, read
 [The one calling rule](#the-one-calling-rule) and
 [Common mistakes](#common-mistakes).
 
@@ -15,13 +15,13 @@ is the `Bloom` namespace, plus the `BloomFilter` and `Bits` types.
 ## Import
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql" end
 ```
 
 - The path is resolved **relative to the working directory the script is
   run from**, not relative to the importing file. Run scripts from the
   directory where that relative path is valid (adjust the path otherwise).
-- Do **not** import `aql:math` or `aql:array` yourself — `bloom.aql`
+- Do **not** import `aql:math-util` or `aql:array-util` yourself — `bloom.aql`
   imports its own dependencies.
 
 ## The one calling rule
@@ -51,7 +51,7 @@ fine too; use `end` for top-level statements that aren't already wrapped.
 
 | Call | Returns | Notes |
 |------|---------|-------|
-| `{n: Integer, p: Decimal} Bloom.make end` | `BloomFilter` | `n` = expected distinct items; `p` = target false-positive rate in `(0, 0.5]`. Derives `m`, `k`. |
+| `{n: Integer, p: Float} Bloom.make end` | `BloomFilter` | `n` = expected distinct items; `p` = target false-positive rate in `(0, 0.5]`. Derives `m`, `k`. |
 | `bf Bloom.add item end` | the **same** `bf` (mutated) | Any value; stringified internally. Sets `k` bits, increments `added`. |
 | `bf Bloom.contains item end` | `Boolean` | `false` = **definitely never added**. `true` = *probably* added (may be a false positive). |
 | `bf Bloom.count end` | `Integer` | **Estimate** of distinct items, not an exact tally. Empty filter ⇒ `0`. `O(m)`. |
@@ -67,7 +67,7 @@ fields as read-only; mutate through the namespace words.
 Create, add, query:
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql" end
 def seen ({n: 10000, p: 0.01} Bloom.make end)
 def _ (seen Bloom.add "ada" end)
 (seen Bloom.contains "ada"   end) print   # => true
@@ -110,8 +110,8 @@ result print
 In a test, assert the failure instead:
 
 ```aql
-"aql:test" import end
-[a Bloom.merge b end] assert.throws end
+import "aql:test" end
+[a Bloom.merge b end] Assert.throws end
 ```
 
 ## Common mistakes
@@ -126,7 +126,7 @@ In a test, assert the failure instead:
 | `a Bloom.merge b end` with different `(n, p)` | build both with identical `(n, p)` | Mismatched `m`/`k` raises `undefined_word: bloom-merge-requires-equal-m` (or `…-k`). |
 | `make BloomFilter {…}` | `{n, p} Bloom.make end` | Construct only via `Bloom.make`. |
 | `(bf Bloom.count end)` for an exact count | read `added` via `Bloom.encode`/`bf.added` | `count` is an estimate; `added` is the exact insert count. |
-| `"aql:math" import end` in your script | nothing | `bloom.aql` imports its own deps. |
+| `import "aql:math-util"` in your script | nothing | `bloom.aql` imports its own deps. |
 
 A note on `print` while debugging: `print` collects a forward argument,
 so `(a) print (b) print` reverses and a bare trailing `print` may fail to

@@ -2,7 +2,7 @@
 #
 # Public surface (the Bloom namespace exported at the bottom):
 #
-#   {n:Integer, p:Decimal} Bloom.make   → BloomFilter
+#   {n:Integer, p:Float} Bloom.make   → BloomFilter
 #   bf Bloom.add item                   → BloomFilter (mutated in place)
 #   bf Bloom.contains item              → Boolean
 #   bf Bloom.count                      → Integer  (cardinality estimate)
@@ -12,13 +12,15 @@
 # BloomFilter is a `refine Object` subtype. Bit storage is a nested
 # `Bits` Object whose fields are stringified bit indices set to 1.
 #
-# Imported via `"./bloom.aql" import end` from another script; that
+# Imported via `import "./bloom.aql"` from another script; that
 # script doesn't need to pre-import `aql:math` because the library
 # imports it itself.
 
 
-"aql:math"  import end
-"aql:array" import end
+import "aql:math-util" end
+import "aql:array-util" end
+import "aql:string-util" end
+import "aql:bin-util" end
 
 
 # --- types ----------------------------------------------------------
@@ -45,7 +47,7 @@ def alphabet " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_
 def code-at fn [
   [i:Integer s:String] [Integer] [
     def c (s slice i (i add 1))
-    def idx (indexof alphabet c)
+    def idx (StringUtil.indexof alphabet c)
     idx add 32
   ]
 ]
@@ -63,9 +65,9 @@ def codes-of fn [
 # the forward-precedence trap on bare `bxor` next to a constant.
 def fnv-step fn [
   [code:Integer acc:Integer] [Integer] [
-    def x (acc bxor code)
+    def x (acc BinUtil.bxor code)
     def y (x mul 16777619)
-    y band 4294967295
+    y BinUtil.band 4294967295
   ]
 ]
 
@@ -79,8 +81,8 @@ def hash1 fn [
 # (h1 + i*h2) mod m covers all residues.
 def hash2 fn [
   [s:String] [Integer] [
-    def base (1099511628211 (s codes-of) [fnv-step] fold)
-    base bor 1
+    def seed (1099511628211 (s codes-of) [fnv-step] fold)
+    seed BinUtil.bor 1
   ]
 ]
 
@@ -96,9 +98,11 @@ def bit-key fn [
 def bit-test fn [
   [i:Integer bits:Bits] [Integer] [
     def k (i bit-key)
-    # `get`/`set` on the bit store stay in stack form: they thread and
-    # mutate the piped store in place, which the forward builtin form
-    # does not do for a `refine Object` param.
+    # The bit store uses stack-form `get`/`set`. As of aql db828ec the
+    # forward form (`bits set k v`) mutates a `refine Object` correctly
+    # at the top level, but does NOT persist when the call runs inside a
+    # `Test.test` sub-engine — so the stack form, reliable everywhere, is
+    # kept (see dx-report.md §1).
     def v (bits k get)
     v otherwise 0
   ]
@@ -138,25 +142,25 @@ def indices-for fn [
 # --- constructor ----------------------------------------------------
 
 def derive-m fn [
-  [p:Decimal n:Integer] [Integer] [
-    def lnp (p math.log)
-    def ln2 (2 math.log)
-    def num (n math.negate convert Decimal mul lnp)
+  [p:Float n:Integer] [Integer] [
+    def lnp (p MathUtil.log)
+    def ln2 (2 MathUtil.log)
+    def num (n MathUtil.negate convert Float mul lnp)
     def den (ln2 mul ln2)
     def raw (num div den)
-    raw math.ceil
+    raw MathUtil.ceil
   ]
 ]
 
 def derive-k fn [
   [m:Integer n:Integer] [Integer] [
-    def ln2 (2 math.log)
-    def raw (m convert Decimal mul ln2 div n)
-    raw math.round
+    def ln2 (2 MathUtil.log)
+    def raw (m convert Float mul ln2 div n)
+    raw MathUtil.round
   ]
 ]
 
-# `opts:Options` dispatches as of aql 5b983b6; earlier builds forced
+# `opts:Options` dispatches as of aql db828ec; earlier builds forced
 # `Map` here because an Options-typed parameter broke dispatch.
 def make-bloom fn [
   [opts:Options] [BloomFilter] [
@@ -230,13 +234,13 @@ def bloom-count fn [
     def k bf.k
     def saturated (x eq m)
     if saturated [bf.added] [
-      def md (m convert Decimal)
-      def kd (k convert Decimal)
-      def xd (x convert Decimal)
+      def md (m convert Float)
+      def kd (k convert Float)
+      def xd (x convert Float)
       def ratio (md sub xd div md)
-      def lnr (ratio math.log)
-      def est (md math.negate div kd mul lnr)
-      est math.round
+      def lnr (ratio MathUtil.log)
+      def est (md MathUtil.negate div kd mul lnr)
+      est MathUtil.round
     ]
   ]
 ]
@@ -257,7 +261,7 @@ def bloom-encode fn [
     def hits (iota m each [
       var [[i] bits bit-test i end]
     ])
-    def set-idxs (array.where hits end)
+    def set-idxs (ArrayUtil.where hits end)
     def payload (do {
       n:     [bf.n]
       p:     [bf.p]
@@ -275,14 +279,14 @@ def bloom-encode fn [
 
 # Merge requires both filters to share the same bit width (m) and hash
 # count (k) — the natural outcome of building them with the same
-# (n, p). On a mismatch we raise. Note: aql 5b983b6 redefined `error`
+# (n, p). On a mismatch we raise. Note: aql db828ec redefined `error`
 # as an error-*handler* combinator (`do [risky] error [handler]`) and
 # removed the old string-raising form, with no replacement word for
 # raising a custom message. The catchable idiom that
 # remains is to dispatch a descriptively-named word that isn't defined;
 # the raised `undefined_word: <name>` carries the failed precondition
 # as its text, and callers can trap it with `do […] error […]` or
-# `assert.throws`.
+# `Assert.throws`.
 def bloom-merge fn [
   [b:BloomFilter a:BloomFilter] [BloomFilter] [
     def am a.m

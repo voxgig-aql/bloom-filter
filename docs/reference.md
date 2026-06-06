@@ -13,11 +13,11 @@ The module exports a single namespace, `Bloom`, plus two types. Import
 it with:
 
 ```aql
-"./bloom.aql" import end
+import "./bloom.aql" end
 ```
 
-A consuming script does **not** need to import `aql:math` or
-`aql:array` itself — `bloom.aql` imports them internally.
+A consuming script does **not** need to import `aql:math-util` or
+`aql:array-util` itself — `bloom.aql` imports them internally.
 
 ---
 
@@ -44,7 +44,7 @@ A `refine Object` subtype — the filter instance. Fields:
 | Field   | Type     | Meaning                                            |
 |---------|----------|----------------------------------------------------|
 | `n`     | Integer  | Target capacity (expected number of distinct items)|
-| `p`     | Decimal  | Target false-positive probability                  |
+| `p`     | Float  | Target false-positive probability                  |
 | `m`     | Integer  | Derived bit-array width                             |
 | `k`     | Integer  | Derived number of hash functions                   |
 | `added` | Integer  | Count of `add` calls made against this filter      |
@@ -70,7 +70,7 @@ Construct a filter sized for a target capacity and false-positive rate.
 
 | | |
 |--|--|
-| **Call**    | `{n: Integer, p: Decimal} Bloom.make end` |
+| **Call**    | `{n: Integer, p: Float} Bloom.make end` |
 | **Stack in**| an options Map with keys `n` and `p` |
 | **Returns** | `BloomFilter` |
 
@@ -172,9 +172,9 @@ merge, every item present in `a` or `b` reads as contained.
 
 On a precondition violation `merge` raises a catchable error —
 `undefined_word: bloom-merge-requires-equal-m` (or `…-equal-k`). Trap
-it with `do […] error […]` or `assert.throws`. (The unusual error
-class is a consequence of aql 5b983b6 removing custom error raising;
-see [Explanation §Raising errors](explanation.md#raising-errors-in-aql-5b983b6).)
+it with `do […] error […]` or `Assert.throws`. (The unusual error
+class is a consequence of aql db828ec removing custom error raising;
+see [Explanation §Raising errors](explanation.md#raising-errors-in-aql-db828ec).)
 
 ### `Bloom.encode`
 
