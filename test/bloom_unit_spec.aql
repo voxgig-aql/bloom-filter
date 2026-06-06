@@ -1,9 +1,9 @@
 # Example-based unit tests for bloom-filter — DECLARATIVE SPEC FORMAT.
 #
 # This file is the spec-format sibling of `test/bloom_unit_test.aql`.
-# Where that file drives example checks imperatively (`test.test` with
-# `assert.equal`), this one expresses them as *data*: a list of
-# `TestSpec` values that `test.run-spec` walks and dispatches. It mirrors
+# Where that file drives example checks imperatively (`Test.test` with
+# `Assert.equal`), this one expresses them as *data*: a list of
+# `TestSpec` values that `Test.run-spec` walks and dispatches. It mirrors
 # how `test/bloom_prop_spec.aql` is the spec-format sibling of the
 # direct-code `test/bloom_prop_test.aql`.
 #
@@ -24,8 +24,8 @@
 #   aql test/bloom_unit_spec.aql
 
 
-import "aql:test"
-import "./bloom.aql"
+import "aql:test" end
+import "./bloom.aql" end
 
 
 # --- the spec suite, built as data ---------------------------------
@@ -95,7 +95,7 @@ def specs [
 
 def _ (specs each [
   var [[s]
-    s test.run-spec end
+    s Test.run-spec end
     0
   ]
 ])
@@ -104,6 +104,6 @@ def _ (specs each [
 # --- summary -------------------------------------------------------
 
 "---" print
-"fail count: " print test.fail-count end print
-0 test.fail-count end assert.equal end
+"fail count: " print Test.fail-count end print
+0 Test.fail-count end Assert.equal end
 "all green" print

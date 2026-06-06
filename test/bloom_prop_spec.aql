@@ -1,16 +1,16 @@
 # Property-based tests for bloom-filter — DECLARATIVE SPEC FORMAT.
 #
 # This file deliberately exercises one of aql:test's two property-test
-# surfaces: the declarative `PropertySpec`. `test.prop` builds a spec as
+# surfaces: the declarative `PropertySpec`. `Test.prop` builds a spec as
 # *data* —
 #
-#   test.prop NAME [GEN-BODY] [PROPERTY-BODY]   →   PropertySpec map
+#   Test.prop NAME [GEN-BODY] [PROPERTY-BODY]   →   PropertySpec map
 #
-# — which `test.run-property` then runs (at the default 100 iterations).
+# — which `Test.run-property` then runs (at the default 100 iterations).
 # Specs are values, so we assemble them into a list and run the list.
 #
 # The sibling file `test/bloom_prop_test.aql` covers the SAME idea through the
-# other surface — the imperative `test.check-prop` driver, called
+# other surface — the imperative `Test.check-prop` driver, called
 # directly with explicit run/seed/shrink counts. Keeping both is on
 # purpose: together they exercise both halves of the framework. The
 # split also mirrors a real trade-off — the declarative form is
@@ -29,8 +29,8 @@
 #   aql test/bloom_prop_spec.aql
 
 
-import "aql:test"
-import "./bloom.aql"
+import "aql:test" end
+import "./bloom.aql" end
 
 
 # --- shared generators ---------------------------------------------
@@ -64,7 +64,7 @@ def report fn [
 def specs [
 
   # 1. No false negatives: a key that was just added is always found.
-  (test.prop "add-then-contains"
+  (Test.prop "add-then-contains"
     [ r.string charset (r.int 1 16) ]
     [ var [[key]
         def bf ({n: 1000, p: 0.01} Bloom.make end)
@@ -73,7 +73,7 @@ def specs [
     ] ])
 
   # 2. A fresh filter (no bits set) reports every key as absent.
-  (test.prop "empty-contains-nothing"
+  (Test.prop "empty-contains-nothing"
     [ r.string charset (r.int 1 16) ]
     [ var [[key]
         def bf ({n: 1000, p: 0.01} Bloom.make end)
@@ -82,7 +82,7 @@ def specs [
 
   # 3. make derives well-formed params for any (n, p): m >= 1, k >= 1,
   #    and there are at least as many bits as hash functions (m >= k).
-  (test.prop "params-well-formed"
+  (Test.prop "params-well-formed"
     [ do { n: [r.int 10 2000], p: [plist r.one-of] } ]
     [ var [[opts]
         def ps ((opts Bloom.make end) Bloom.params end)
@@ -93,7 +93,7 @@ def specs [
 
   # 4. params round-trips the constructor inputs: reported n and p are
   #    exactly what make was given.
-  (test.prop "params-round-trip"
+  (Test.prop "params-round-trip"
     [ do { n: [r.int 10 2000], p: [plist r.one-of] } ]
     [ var [[opts]
         def ps ((opts Bloom.make end) Bloom.params end)
@@ -102,7 +102,7 @@ def specs [
 
   # 5. Bulk no false negatives: every key in a randomly-sized batch is
   #    found after the whole batch is inserted.
-  (test.prop "bulk-add-all-found"
+  (Test.prop "bulk-add-all-found"
     [ r.list-of [ r.string charset (r.int 1 12) ] (r.int 1 20) ]
     [ var [[items]
         def bf ({n: 1000, p: 0.01} Bloom.make end)
@@ -117,7 +117,7 @@ def specs [
 
 def _ (specs each [
   var [[s]
-    (s test.run-property end) report
+    (s Test.run-property end) report
     0
   ]
 ])
@@ -126,6 +126,6 @@ def _ (specs each [
 # --- summary -------------------------------------------------------
 
 "---" print
-"fail count: " print test.fail-count end print
-0 test.fail-count end assert.equal end
+"fail count: " print Test.fail-count end print
+0 Test.fail-count end Assert.equal end
 "all green" print
