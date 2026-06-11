@@ -15,7 +15,7 @@ on:
 env:
   # aql-lang/aql @ main, 2026-06-11. Pinned to the exact commit this
   # module is verified against.
-  AQL_REF: 958c379b12295652c739a88f2f198726d48897fb
+  AQL_REF: 7193a7d3c69857207e44b4bd53541b9b0d4348aa
 
 jobs:
   test:

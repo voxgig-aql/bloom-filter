@@ -43,7 +43,7 @@ Run any script in this repo by passing its path:
 aql test/bloom_smoke_test.aql
 ```
 
-This module is verified against aql commit `958c379b`; the CI workflow
+This module is verified against aql commit `7193a7d3`; the CI workflow
 (`ci/test.yml`) pins the same commit.
 
 ---

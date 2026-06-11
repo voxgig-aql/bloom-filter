@@ -153,11 +153,12 @@ def derive-k fn [
 ]
 
 # Arguments are validated up front with `raise` (code bad_input).
-# Two idioms to note (both verified, see dx-report.md): the raise
-# message is bound with `def` first — `raise` does not collect a
-# template-string literal — and every guard `if` carries an explicit
-# empty else `[]`, because an else-less `if` forward-collects the
-# `def` statement that follows it.
+# Style note: each raise message is bound with `def` first, and every
+# guard `if` carries an explicit empty else `[]`. Both were required
+# workarounds on builds before aql 7193a7d3 (raise didn't collect
+# template literals; an else-less `if` forward-collected the next
+# `def` statement — see dx-report.md); they're kept because they read
+# clearly and run correctly on older builds too.
 def make-bloom fn [
   [opts:Options] [BloomFilter] [
     def n-val (opts "n" get)

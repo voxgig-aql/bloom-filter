@@ -2,7 +2,7 @@
 
 Guidance for an AI coding agent calling this bloom-filter library from an
 AQL project. Every code block below is verified to run against
-`aql-lang/aql` @ `958c379b`. If you read nothing else, read
+`aql-lang/aql` @ `7193a7d3`. If you read nothing else, read
 [The one calling rule](#the-one-calling-rule) and
 [Common mistakes](#common-mistakes).
 

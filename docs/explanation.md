@@ -180,12 +180,14 @@ Failures raise coded errors with `raise`: `bad_input` from `make`,
 Handlers catch them with `do […] error […]` and read `code`/`message`
 (plus any payload fields) off the Error value.
 
-Two idioms in `bloom.aql` exist because of runtime sharp edges, both
-documented with repros in [`dx-report.md`](../dx-report.md): the raise
-*message* is always bound with `def` first (`raise` does not collect a
-template-string literal), and every guard `if` carries an explicit
-empty else `[]` (an else-less `if` eagerly forward-collects a `def`
-statement that follows it, which can pre-empt the guard).
+Two defensive idioms in `bloom.aql` date from runtime sharp edges that
+have since been fixed upstream (both documented with repros in
+[`dx-report.md`](../dx-report.md)): the raise *message* is bound with
+`def` first (older builds' `raise` did not collect a template-string
+literal), and every guard `if` carries an explicit empty else `[]`
+(older builds eagerly forward-collected a `def` statement following an
+else-less `if`, which could pre-empt the guard). Both spellings remain
+correct on every build, so they are kept.
 
 Historical note: on aql `db828ec` there was no way to raise a custom
 error at all, and this module signalled merge mismatches by

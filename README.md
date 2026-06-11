@@ -88,7 +88,7 @@ test/bloom_prop_test.aql   property-based tests — direct (Test.check-prop)
 test/bloom_prop_spec.aql   property-based tests — declarative spec format
 test/bloom_smoke_test.aql  end-to-end smoke run over every public word
 docs/                      Diátaxis documentation (above)
-dx-report.md               developer-experience notes against aql @ 958c379b
+dx-report.md               developer-experience notes against aql @ 7193a7d3
 proposals/                 language proposals raised from this module's DX
 ```
 
