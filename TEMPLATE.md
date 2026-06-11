@@ -39,10 +39,8 @@ plugins/<lib>-aql/
   skills/<lib>-aql/SKILL.md   BUNDLED copy of the skill (must equal the canonical one)
 proposals/
   README.md                   slot for upstream-language RFCs (see the file)
-ci/
-  test.yml                    GitHub Actions: build aql, run every suite
-  activate.sh                 moves test.yml into .github/workflows/
-  README.md                   why CI ships parked under ci/
+.github/workflows/
+  test.yml                    GitHub Actions: build aql, run every suite + consistency job
 docs/                         Diátaxis docs: tutorial, how-to, reference, explanation
 test/
   <lib>_unit_test.aql         example-based unit tests — imperative (Test.test)
@@ -64,11 +62,11 @@ test/
   multi-module one (e.g. `radix_unit_test.aql`). Every assertion-bearing suite
   ends with the same tail and prints `all green`; smoke suites carry no
   assertion (pass = no error).
-- **Single source of truth for the pinned aql commit:** `ci/test.yml`’s
-  `env.AQL_REF` (full 40-char SHA). The `consistency` CI job fails if
-  `.claude/hooks/session-start.sh`’s `AQL_REF` or `api.json`’s `aql_ref` prefix
-  drift from it. Bump the ref in `ci/test.yml`, then update those two and
-  re-run the suites.
+- **Single source of truth for the pinned aql commit:**
+  `.github/workflows/test.yml`’s `env.AQL_REF` (full 40-char SHA). The
+  `consistency` CI job fails if `.claude/hooks/session-start.sh`’s `AQL_REF` or
+  `api.json`’s `aql_ref` prefix drift from it. Bump the ref in the workflow,
+  then update those two and re-run the suites.
 - **Agent docs, layered (kept self-contained, guarded against drift):**
   `AGENTS.md` is the canonical prose guide; `CLAUDE.md` `@`-imports it;
   `.claude/skills/<lib>-aql/SKILL.md` is a strict condensation that auto-loads;
@@ -107,8 +105,8 @@ Replace `<lib>` with your library name (kebab-case, e.g. `skip-list`) and
    homepage/repository).
 8. **SessionStart hook** — in `.claude/hooks/session-start.sh`, set the smoke
    path to `test/<lib>_smoke_test.aql`. Set `AQL_REF` to your pinned commit
-   (same value as `ci/test.yml`).
-9. **CI** — in `ci/test.yml`, set `env.AQL_REF`, list your suites with clear
+   (same value as `.github/workflows/test.yml`).
+9. **CI** — in `.github/workflows/test.yml`, set `env.AQL_REF`, list your suites with clear
    step labels, point the advisory check at `<lib>.aql`, and update the
    `consistency` job’s plugin paths.
 10. **Docs** — rewrite `docs/*` for your domain; keep the four-mode structure
@@ -120,8 +118,9 @@ Replace `<lib>` with your library name (kebab-case, e.g. `skip-list`) and
 13. **`proposals/`** — leave empty apart from its `README.md` until you have an
     upstream-language RFC to file.
 14. **Delete `TEMPLATE.md`** (this file).
-15. **Activate CI** once you have a `workflow`-scoped token: run
-    `ci/activate.sh` (see `ci/README.md`).
+15. **CI is already live** at `.github/workflows/test.yml` — a repo created with
+    “Use this template” inherits it and runs it on the first push/PR (just enable
+    Actions for the new repo).
 
 When the rename is done, `for f in test/*.aql; do aql "$f"; done` should end
 every suite with `all green`.

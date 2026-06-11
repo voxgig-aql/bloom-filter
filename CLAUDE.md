@@ -23,6 +23,6 @@ mistakes to avoid. Every example there is verified against the pinned
   Each assertion-bearing suite ends by asserting `Test.fail-count` is `0` and
   prints `all green`.
 - Known AQL-runtime gotchas observed with the pinned build are in
-  `dx-report.md`. The pinned aql commit is single-sourced in `ci/test.yml`
+  `dx-report.md`. The pinned aql commit is single-sourced in `.github/workflows/test.yml`
   (`AQL_REF`); a CI job fails if the hook or `api.json` drift from it.
 - Forking this repo to start a new AQL library? See `TEMPLATE.md`.

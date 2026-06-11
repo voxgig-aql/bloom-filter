@@ -132,7 +132,7 @@ jobs:
       # The pinned aql commit lives in several files; they must agree or a
       # session/CI builds a different interpreter than the one this library is
       # verified against (the exact drift that bit the trie sibling repo).
-      # ci/test.yml's env.AQL_REF (full 40-char) is the single source of truth;
+      # .github/workflows/test.yml's env.AQL_REF (full 40-char) is the single source of truth;
       # api.json stores a short prefix, so compare by prefix.
       - name: Pinned aql ref is consistent across files
         run: |
@@ -140,12 +140,12 @@ jobs:
           fail=0
           hook_ref=$(grep -oE 'AQL_REF=[0-9a-f]{7,40}' .claude/hooks/session-start.sh | head -1 | cut -d= -f2)
           if [ "$hook_ref" != "$ref" ]; then
-            echo "::error file=.claude/hooks/session-start.sh::AQL_REF=$hook_ref != ci/test.yml AQL_REF=$ref"
+            echo "::error file=.claude/hooks/session-start.sh::AQL_REF=$hook_ref != .github/workflows/test.yml AQL_REF=$ref"
             fail=1
           fi
           api_ref=$(python3 -c "import json;print(json.load(open('api.json'))['aql_ref'])")
           if [ "${ref:0:${#api_ref}}" != "$api_ref" ]; then
-            echo "::error file=api.json::aql_ref=$api_ref is not a prefix of ci/test.yml AQL_REF=$ref"
+            echo "::error file=api.json::aql_ref=$api_ref is not a prefix of .github/workflows/test.yml AQL_REF=$ref"
             fail=1
           fi
           [ "$fail" = 0 ] && echo "ok: pinned aql ref consistent ($ref; api.json prefix $api_ref)"
