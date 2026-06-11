@@ -26,7 +26,9 @@ fails on the repo's replace directives):
 
 ```bash
 git clone https://github.com/aql-lang/aql /tmp/aql-source
-cd /tmp/aql-source/cmd/go
+cd /tmp/aql-source
+git checkout db828ecb6ee1d161ff177134478f42c56484f051   # the commit CI pins (ci/test.yml AQL_REF)
+cd cmd/go
 GOFLAGS=-mod=mod go build -o "$HOME/.local/bin/aql" ./aql
 ```
 
