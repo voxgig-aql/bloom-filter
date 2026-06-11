@@ -90,17 +90,16 @@ only two real hashes. It derives index `i` as:
 index_i = (h1 + i · h2) mod m        for i in 0 … k-1
 ```
 
-`h1` and `h2` are FNV-1a-style hashes of the stringified item, seeded
-differently; `h2` is forced odd (OR'd with 1) so the stride covers all
-residues mod `m`. This "double hashing" gives `k` well-spread indices at
-the cost of two hashes rather than `k`, a standard bloom-filter
-technique.
-
-Because AQL does not expose a character-to-code primitive, the module
-maps each character to a code via lookup in a fixed 95-character
-printable-ASCII alphabet (non-printable input collapses to space). This
-is a workaround, not a security-grade hash — the filter is for
-membership, not cryptography.
+`h1` and `h2` come from the native FNV-1a words in `aql:bin-util`:
+`h1` is `BinUtil.fnv32` of the stringified item, and `h2` is the high
+32 bits of `BinUtil.fnv64`, OR'd with 1 so the stride is odd and
+covers all residues mod `m`. This "double hashing" gives `k`
+well-spread indices at the cost of two hashes rather than `k`, a
+standard bloom-filter technique. (Earlier versions of this module
+hand-rolled FNV over a 95-character printable-ASCII lookup table
+because the runtime exposed no character-code or hash words; the
+native words handle any string and disperse better.) FNV is not a
+security-grade hash — the filter is for membership, not cryptography.
 
 ---
 
@@ -120,11 +119,10 @@ where the logarithm would blow up) by returning the raw `added` counter
 instead.
 
 This is why `count` is an *estimate* and generally reads a little below
-the true insert count as the filter fills — 100 distinct inserts into a
-`{n:1000, p:0.01}` filter estimate around 90. If you need the exact
-number of `add` calls, read the `added` field via
-[`params`](reference.md#bloomparams)-adjacent access rather than
-`count`. An empty filter estimates exactly `0`.
+the true insert count as the filter fills. If you need the exact
+number of `add` calls, read the `added` field instead (`bf.added`,
+also carried in the [`encode`](reference.md#bloomencode) snapshot).
+An empty filter estimates exactly `0`.
 
 ---
 
@@ -145,43 +143,66 @@ meaningless. The check is a guard against silently-wrong results.
 
 ## Design choices specific to this module
 
-### Sparse bit storage
+### Packed bit storage
 
-Instead of a packed bit vector, bits live in a `Bits` Object keyed by
-stringified index (`"4601": 1`). This suits AQL's data model — there is
-no native fixed-width bit array — and keeps storage proportional to the
-number of *set* bits rather than `m`. The trade-off is that the `O(m)`
-operations (`count`, `merge`, `encode`) walk all `m` indices probing
-this map, which is the dominant cost in the
-[property tests](how-to.md#run-the-tests).
+Bits are packed into an `Array` of integer words, 63 bits per word
+(bit 63 is the sign bit; staying out of it keeps every word a plain
+non-negative Integer). The Array is fixed-extent and mutated in place
+through `set`, and the word-level operations come from `aql:bin-util`:
+`BinUtil.set`/`BinUtil.test` for single bits, `BinUtil.popcount` for
+`count`, and `BinUtil.bor` for `merge` — so the formerly per-bit
+`O(m)` walks now touch one word per 63 bits. Memory is `O(m/63)`
+regardless of load.
+
+Earlier versions used a sparse map keyed by stringified bit index,
+because the runtime then had no mutable indexed container and no
+bitwise words outside core. With `Array` and the `bin-util` second
+tier, the packed layout is both the simpler and the faster choice.
+
+One subtlety: the `bits` field is declared by *type* (`bits: Array`)
+rather than given a schema default, and every constructor passes a
+fresh Array. A class-field default is evaluated once, at class
+definition, and that single value would be shared by every instance —
+a mutable default would silently alias all filters together (see
+`dx-report.md` §2).
 
 ### Mutation in place
 
-`add` and `merge` mutate the filter Object in place (and also return
+`add` and `merge` mutate the filter instance in place (and also return
 it). This is deliberate: a filter is a large accumulator, and copying it
 on every insert would be wasteful. Callers that want an independent copy
-should build a fresh filter.
+should round-trip through `encode`/`decode` or build a fresh filter.
 
-### Raising errors in aql db828ec
+### Raising errors
 
-`merge`'s precondition check raises by dispatching an undefined,
-descriptively-named word (`bloom-merge-requires-equal-m`). That looks
-odd, and it is a workaround: aql db828ec redefined `error` as an
-error-*handling* combinator (`do [risky] error [handler]`) and removed
-the older string-raising form, leaving no word to raise a custom
-message. Dispatching a word that isn't defined is the remaining way to
-produce a *catchable* failure whose text names the problem. If a future
-aql restores custom raising, this is the first thing to clean up.
+Failures raise coded errors with `raise`: `bad_input` from `make`,
+`incompatible_merge` from `merge`, `bad_payload` from `decode`.
+Handlers catch them with `do […] error […]` and read `code`/`message`
+(plus any payload fields) off the Error value.
+
+Two idioms in `bloom.aql` exist because of runtime sharp edges, both
+documented with repros in [`dx-report.md`](../dx-report.md): the raise
+*message* is always bound with `def` first (`raise` does not collect a
+template-string literal), and every guard `if` carries an explicit
+empty else `[]` (an else-less `if` eagerly forward-collects a `def`
+statement that follows it, which can pre-empt the guard).
+
+Historical note: on aql `db828ec` there was no way to raise a custom
+error at all, and this module signalled merge mismatches by
+dispatching a descriptively-named undefined word
+(`bloom-merge-requires-equal-m`). The `raise` word landed after that
+build and the workaround is retired.
 
 ### `if` is always written all-forward
 
 Throughout `bloom.aql`, `if` is written `if cond [then] [else]` with
-every argument forward of the word. On aql db828ec both the all-forward
-and the all-stack forms select the correct branch; only the *mixed*
-form, with `if` between the condition and its branches
-(`cond if […] […]`), silently takes the else branch. Keeping `if` and
-its operands on the same side sidesteps that trap. This is otherwise
-invisible to callers.
+every argument forward of the word. Both the all-forward and the
+all-stack forms select the correct branch; only the *mixed* form, with
+`if` between the condition and its branches (`cond if […] […]`),
+silently takes the else branch. Keeping `if` and its operands on the
+same side sidesteps that trap — and as noted above, an `if` used as a
+statement always gets an explicit else, even an empty one. This is
+otherwise invisible to callers.
 
 ---
 

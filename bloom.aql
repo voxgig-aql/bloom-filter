@@ -7,111 +7,103 @@
 #   bf Bloom.contains item              → Boolean
 #   bf Bloom.count                      → Integer  (cardinality estimate)
 #   bf Bloom.params                     → Map      ({n, p, m, k})
+#   bf Bloom.encode                     → String   (jsonic snapshot)
+#   text Bloom.decode                   → BloomFilter (rebuilt snapshot)
 #   a Bloom.merge b                     → BloomFilter (m and k must match)
 #
-# BloomFilter is a `refine Object` subtype. Bit storage is a nested
-# `Bits` Object whose fields are stringified bit indices set to 1.
+# Failures raise coded errors (catch with `do […] error […]`, read
+# `e.code` / `e.message` in the handler):
+#
+#   bad_input           Bloom.make arguments missing or out of range
+#   incompatible_merge  Bloom.merge filters disagree on m or k
+#   bad_payload         Bloom.decode text is not an encode snapshot
+#
+# BloomFilter is a sealed `class` instance. Bit storage is an Array
+# of 63-bit integer words mutated in place.
 #
 # Imported via `import "./bloom.aql"` from another script; that
-# script doesn't need to pre-import `aql:math` because the library
-# imports it itself.
+# script doesn't need to pre-import the util modules because the
+# library imports its own dependencies.
 
 
-import "aql:math-util" end
-import "aql:array-util" end
-import "aql:string-util" end
-import "aql:bin-util" end
+import "aql:math-util"
+import "aql:array-util"
+import "aql:bin-util"
+import "aql:struct-util"
 
 
-# --- types ----------------------------------------------------------
+# --- type -----------------------------------------------------------
+#
+# `bits` is declared as a required typed field, NOT a defaulted one:
+# a class field default is evaluated once, when the class is defined,
+# and that single value is shared by every instance — a mutable
+# default (an Array or flex node) would silently alias all filters
+# together. Every constructor call passes a fresh Array explicitly.
 
-def Bits (refine Object {})
-
-def BloomFilter (refine Object {
+def BloomFilter class {
   n:     0
   p:     0.0
   m:     0
   k:     0
   added: 0
-  bits:  (make Bits {})
-})
+  bits:  Array
+}
 
 
 # --- hashing --------------------------------------------------------
-
-# 95-char printable ASCII alphabet; index 0..94 ↔ codes 32..126. AQL
-# does not expose char→code directly, so we look up via `indexof`.
-# Non-printable input maps to space (32).
-def alphabet " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
-
-def code-at fn [
-  [i:Integer s:String] [Integer] [
-    def c (s slice i (i add 1))
-    def idx (StringUtil.indexof alphabet c)
-    idx add 32
-  ]
-]
-
-def codes-of fn [
-  [s:String] [List] [
-    def n (s size)
-    iota n each [
-      var [[i] s code-at i end]
-    ]
-  ]
-]
-
-# Single FNV-1a-style step. Wrapped as a typed fn so the body avoids
-# the forward-precedence trap on bare `bxor` next to a constant.
-def fnv-step fn [
-  [code:Integer acc:Integer] [Integer] [
-    def x (acc BinUtil.bxor code)
-    def y (x mul 16777619)
-    y BinUtil.band 4294967295
-  ]
-]
+#
+# Double hashing (Kirsch–Mitzenmacher): index_i = (h1 + i*h2) mod m.
+# h1 and h2 come from the native FNV-1a words in aql:bin-util — fnv32
+# for h1, the high half of fnv64 for h2 — so any string hashes
+# directly (no printable-ASCII alphabet table, as the pre-class
+# versions of this module needed). h2 is OR'd with 1 so it is always
+# odd, which keeps the probe sequence (h1 + i*h2) mod m covering all
+# residues. Both hashes are < 2^32 and k is small, so the index
+# arithmetic stays far below the Integer overflow boundary (overflow
+# is a hard error in aql, not a silent wrap).
 
 def hash1 fn [
   [s:String] [Integer] [
-    2166136261 (s codes-of) [fnv-step] fold
+    s BinUtil.fnv32
   ]
 ]
 
-# h2 is OR'd with 1 so it's always odd — guarantees the index sequence
-# (h1 + i*h2) mod m covers all residues.
 def hash2 fn [
   [s:String] [Integer] [
-    def seed (1099511628211 (s codes-of) [fnv-step] fold)
-    seed BinUtil.bor 1
+    ((s BinUtil.fnv64) BinUtil.extract 32 64) BinUtil.bor 1
   ]
 ]
 
 
 # --- bit storage ----------------------------------------------------
+#
+# Bits are packed into an Array of integer words, 63 bits per word —
+# bit 63 is the sign bit, and staying out of it keeps every word a
+# plain non-negative Integer. The Array is fixed-extent and mutated
+# in place; an alias read out of bf.bits sees (and makes) the same
+# writes as the instance.
 
-def bit-key fn [
-  [i:Integer] [String] [
-    convert String i
+def bits-per-word 63
+
+def make-bits fn [
+  [m:Integer] [Array] [
+    def wc ((m add (bits-per-word sub 1)) div bits-per-word)
+    make Array (iota wc each [drop 0])
   ]
 ]
 
 def bit-test fn [
-  [i:Integer bits:Bits] [Integer] [
-    def k (i bit-key)
-    # The bit store uses stack-form `get`/`set`. As of aql db828ec the
-    # forward form (`bits set k v`) mutates a `refine Object` correctly
-    # at the top level, but does NOT persist when the call runs inside a
-    # `Test.test` sub-engine — so the stack form, reliable everywhere, is
-    # kept (see dx-report.md §1).
-    def v (bits k get)
-    v otherwise 0
+  [i:Integer bits:Array] [Boolean] [
+    (bits get (i div bits-per-word)) BinUtil.test (i mod bits-per-word)
   ]
 ]
 
+# In-place mark. Returns nothing — call it as a bare statement (and
+# never `def`-bind it: binding a void call is a loud error).
 def bit-mark fn [
-  [i:Integer bits:Bits] [] [
-    def k (i bit-key)
-    bits 1 k set
+  [i:Integer bits:Array] [] [
+    def wi (i div bits-per-word)
+    bits set (wi) ((bits get (wi)) BinUtil.set (i mod bits-per-word)) end
   ]
 ]
 
@@ -160,12 +152,33 @@ def derive-k fn [
   ]
 ]
 
-# `opts:Options` dispatches as of aql db828ec; earlier builds forced
-# `Map` here because an Options-typed parameter broke dispatch.
+# Arguments are validated up front with `raise` (code bad_input).
+# Two idioms to note (both verified, see dx-report.md): the raise
+# message is bound with `def` first — `raise` does not collect a
+# template-string literal — and every guard `if` carries an explicit
+# empty else `[]`, because an else-less `if` forward-collects the
+# `def` statement that follows it.
 def make-bloom fn [
   [opts:Options] [BloomFilter] [
     def n-val (opts "n" get)
     def p-val (opts "p" get)
+    if ((n-val is Integer) not) [
+      def msg `Bloom.make: n must be an Integer >= 1 (got ${n-val})`
+      raise bad_input msg
+    ] []
+    if ((n-val gte 1) not) [
+      def msg `Bloom.make: n must be >= 1 (got ${n-val})`
+      raise bad_input msg
+    ] []
+    if ((p-val is Float) not) [
+      def msg `Bloom.make: p must be a Float in (0, 0.5] (got ${p-val})`
+      raise bad_input msg
+    ] []
+    def p-ok ((p-val gt 0.0) and (p-val lte 0.5))
+    if (p-ok not) [
+      def msg `Bloom.make: p must be in (0, 0.5] (got ${p-val})`
+      raise bad_input msg
+    ] []
     def m-val (derive-m p-val n-val)
     def k-val (derive-k m-val n-val)
     make BloomFilter {
@@ -174,7 +187,7 @@ def make-bloom fn [
       m:     m-val
       k:     k-val
       added: 0
-      bits:  (make Bits {})
+      bits:  (make-bits m-val)
     }
   ]
 ]
@@ -191,7 +204,7 @@ def bloom-add fn [
         0
       ]
     ])
-    bf (bf.added add 1) "added" set
+    bf set added (bf.added add 1) end
     bf
   ]
 ]
@@ -208,15 +221,12 @@ def bloom-contains fn [
 
 # --- secondary operations -------------------------------------------
 
-# O(m) popcount via scan.
+# O(words) popcount — one native BinUtil.popcount per 63-bit word,
+# not a per-bit scan.
 def popcount fn [
   [bf:BloomFilter] [Integer] [
-    def bits bf.bits
-    def m bf.m
-    def hits (iota m each [
-      var [[i] bits bit-test i end]
-    ])
-    0 hits [add end] fold
+    def words (convert List bf.bits)
+    0 words [var [[w acc] acc add (BinUtil.popcount w)]] fold
   ]
 ]
 
@@ -252,8 +262,8 @@ def bloom-params fn [
 ]
 
 
-# Encode bf as a jsonic-style String: filter parameters plus a list of
-# the currently-set bit indices. Cheap and round-trip-safe via decode.
+# Encode bf as a jsonic-style String: filter parameters plus a list
+# of the currently-set bit indices. Round-trips through Bloom.decode.
 def bloom-encode fn [
   [bf:BloomFilter] [String] [
     def bits bf.bits
@@ -274,51 +284,72 @@ def bloom-encode fn [
   ]
 ]
 
+# Rebuild a filter from a Bloom.encode snapshot. The payload's own m
+# and k are trusted (not re-derived from n and p) so old snapshots
+# survive changes to the sizing formulas. Reads are strict (`!.`) and
+# the whole rebuild is fenced: any malformation — unparseable text,
+# missing keys, mis-typed fields, out-of-range indices — re-raises as
+# one descriptive bad_payload error.
+def bloom-decode fn [
+  [text:String] [BloomFilter] [
+    def payload (do [StructUtil.parse text] error [
+      def msg `Bloom.decode: payload is not parseable jsonic`
+      raise bad_payload msg
+    ])
+    do [
+      def m-val (payload !. m)
+      def bf (make BloomFilter {
+        n:     (payload !. n)
+        p:     (payload !. p)
+        m:     m-val
+        k:     (payload !. k)
+        added: (payload !. added)
+        bits:  (make-bits m-val)
+      })
+      def bits bf.bits
+      def _ ((payload !. set) each [
+        var [[idx]
+          bits bit-mark idx end
+          0
+        ]
+      ])
+      bf
+    ] error [
+      def msg `Bloom.decode: payload is not a Bloom.encode snapshot (need integer n m k added, float p, index list set)`
+      raise bad_payload msg
+    ]
+  ]
+]
+
 
 # --- merge ----------------------------------------------------------
 
-# Merge requires both filters to share the same bit width (m) and hash
-# count (k) — the natural outcome of building them with the same
-# (n, p). On a mismatch we raise. Note: aql db828ec redefined `error`
-# as an error-*handler* combinator (`do [risky] error [handler]`) and
-# removed the old string-raising form, with no replacement word for
-# raising a custom message. The catchable idiom that
-# remains is to dispatch a descriptively-named word that isn't defined;
-# the raised `undefined_word: <name>` carries the failed precondition
-# as its text, and callers can trap it with `do […] error […]` or
-# `Assert.throws`.
+# Merge requires both filters to share the same bit width (m) and
+# hash count (k) — the natural outcome of building them with the same
+# (n, p). On a mismatch we raise incompatible_merge. (`raise` landed
+# in aql after db828ec; the old idiom of signalling by dispatching a
+# descriptively-named undefined word is retired.) The union itself is
+# one word-wise OR per 63-bit word, not a per-bit walk.
 def bloom-merge fn [
   [b:BloomFilter a:BloomFilter] [BloomFilter] [
-    def am a.m
-    def bm b.m
-    def ak a.k
-    def bk b.k
-    def m-ok (am eq bm)
-    def k-ok (ak eq bk)
-    if (m-ok not) [
-      bloom-merge-requires-equal-m
-    ] [
-      if (k-ok not) [
-        bloom-merge-requires-equal-k
-      ] [
-        def a-bits a.bits
-        def b-bits b.bits
-        def _ (iota am each [
-          var [[i]
-            # if b's bit is set, mark a's bit; always yield 0 so the
-            # each body produces a value.
-            def is-set ((b-bits bit-test i end) eq 1)
-            if is-set [
-              a-bits bit-mark i end
-              0
-            ] [
-              0
-            ]
-          ]
-        ])
-        a (a.added add b.added) "added" set
+    if ((a.m eq b.m) not) [
+      def msg `Bloom.merge: filters disagree on m (${a.m} vs ${b.m}); build both with the same (n, p)`
+      raise incompatible_merge msg
+    ] []
+    if ((a.k eq b.k) not) [
+      def msg `Bloom.merge: filters disagree on k (${a.k} vs ${b.k}); build both with the same (n, p)`
+      raise incompatible_merge msg
+    ] []
+    def a-bits a.bits
+    def b-bits b.bits
+    def wc (a-bits size)
+    def _ (iota wc each [
+      var [[wi]
+        a-bits set (wi) ((a-bits get (wi)) BinUtil.bor (b-bits get (wi))) end
+        0
       ]
-    ]
+    ])
+    a set added (a.added add b.added) end
     a
   ]
 ]
@@ -332,12 +363,12 @@ def bloom-merge fn [
 
 export "Bloom" {
   BloomFilter
-  Bits
   make:     make-bloom/r
   add:      bloom-add/r
   contains: bloom-contains/r
   count:    bloom-count/r
   params:   bloom-params/r
   encode:   bloom-encode/r
+  decode:   bloom-decode/r
   merge:    bloom-merge/r
 }

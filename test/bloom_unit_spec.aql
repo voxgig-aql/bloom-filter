@@ -88,6 +88,21 @@ def specs [
     subs: []
   }
 
+  # params survive an encode → decode round trip: feeding params a
+  # decoded snapshot reports exactly the original (n, p, m, k).
+  {
+    name:    "params-after-decode"
+    subject: "Bloom.params"
+    cases: [
+      {
+        name: "n1000-p0.01-round-trip"
+        in:   [ ((({n: 1000, p: 0.01} Bloom.make end) Bloom.encode end) Bloom.decode end) ]
+        out:  {n: 1000, p: 0.01, m: 9586, k: 7}
+      }
+    ]
+    subs: []
+  }
+
 ]
 
 

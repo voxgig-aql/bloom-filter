@@ -2,31 +2,42 @@
 # walks through every public word — a successful end-to-end run (no
 # errors) is the pass condition.
 #
+# Prints are written one value per statement (`print (value) end`):
+# `print` collects a forward argument, so chained `"label" print
+# (value) print` pairs print in the wrong order.
+#
 # Run:
 #   aql test/bloom_smoke_test.aql
 
 import "./bloom.aql" end
 
-"--- bloom-filter smoke demo ---" print
+print ("--- bloom-filter smoke demo ---") end
 
 def bf ({n: 1000, p: 0.01} Bloom.make end)
 
-"params:   " print (bf Bloom.params end) print
+print (`params:   ${(bf Bloom.params end)}`) end
 
 def _add-hello (bf Bloom.add "hello" end)
 def _add-world (bf Bloom.add "world" end)
 
-"hello?:   " print (bf Bloom.contains "hello" end) print
-"world?:   " print (bf Bloom.contains "world" end) print
-"absent?:  " print (bf Bloom.contains "not-added" end) print
-"count:    " print (bf Bloom.count end) print
-"encode:   " print (bf Bloom.encode end) print
+print (`hello?:   ${(bf Bloom.contains "hello" end)}`) end
+print (`world?:   ${(bf Bloom.contains "world" end)}`) end
+print (`absent?:  ${(bf Bloom.contains "not-added" end)}`) end
+print (`count:    ${(bf Bloom.count end)}`) end
+
+def snapshot (bf Bloom.encode end)
+print (`encode:   ${snapshot}`) end
+
+# Decode rebuilds an equivalent filter from the snapshot text.
+def back (snapshot Bloom.decode end)
+print (`decoded-hello?: ${(back Bloom.contains "hello" end)}`) end
+print (`decoded-count:  ${(back Bloom.count end)}`) end
 
 # Merge into a second filter built with matching (n, p).
 def bf2 ({n: 1000, p: 0.01} Bloom.make end)
 def _add-fizz (bf2 Bloom.add "fizz" end)
 
 def merged (bf Bloom.merge bf2 end)
-"merged-hello?:" print (merged Bloom.contains "hello" end) print
-"merged-fizz?: " print (merged Bloom.contains "fizz" end) print
-"merged-count: " print (merged Bloom.count end) print
+print (`merged-hello?: ${(merged Bloom.contains "hello" end)}`) end
+print (`merged-fizz?:  ${(merged Bloom.contains "fizz" end)}`) end
+print (`merged-count:  ${(merged Bloom.count end)}`) end

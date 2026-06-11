@@ -11,7 +11,7 @@
 # `Test.prop` and run by `Test.run-property`. Keeping both is on
 # purpose: together they exercise both halves of the framework. Because
 # this form takes RUNS explicitly, it carries the expensive O(m)
-# properties (merge, encode) at a smaller run budget than the
+# properties (merge, encode, decode) at a smaller run budget than the
 # declarative form's fixed default of 100.
 #
 # GEN-BODY: code that runs with `r` bound to the random source; must
@@ -183,7 +183,8 @@ end
 # matches what we asked for.
 
 # Encode walks every bit (O(m) per call), so we keep n small and
-# the run count low.
+# the run count low. StringUtil.indexof is needle-first / haystack-
+# LAST (it flipped to subject-last after db828ec).
 Test.check-prop "encode-contains-params"
   [r.string charset 8]
   [
@@ -191,10 +192,34 @@ Test.check-prop "encode-contains-params"
       def bf ({n: 100, p: 0.05} Bloom.make end)
       def _ (bf Bloom.add s end)
       def payload (bf Bloom.encode end)
-      def has-n   ((StringUtil.indexof payload "n:100")   gte 0)
-      def has-fp  ((StringUtil.indexof payload "p:0.05")  gte 0)
-      def has-a   ((StringUtil.indexof payload "added:1") gte 0)
+      def has-n   ((StringUtil.indexof "n:100"   payload) gte 0)
+      def has-fp  ((StringUtil.indexof "p:0.05"  payload) gte 0)
+      def has-a   ((StringUtil.indexof "added:1" payload) gte 0)
       has-n and has-fp and has-a
+    ]
+  ]
+  5 1 0
+end
+
+
+# --- P7. decode round-trips encode ---------------------------------
+#
+# decode(encode(bf)) rebuilds a filter that reports the same params,
+# the same exact insert count, and (no false negatives surviving the
+# trip) still contains the inserted key. Encode and decode are both
+# O(m), so this also runs at a small budget.
+
+Test.check-prop "decode-round-trips-encode"
+  [r.string charset 8]
+  [
+    var [[s]
+      def bf ({n: 100, p: 0.05} Bloom.make end)
+      def _ (bf Bloom.add s end)
+      def back ((bf Bloom.encode end) Bloom.decode end)
+      def params-match ((back Bloom.params end) deq (bf Bloom.params end))
+      def added-match ((back "added" get) eq 1)
+      def still-contains (back Bloom.contains s end)
+      params-match and added-match and still-contains
     ]
   ]
   5 1 0

@@ -15,6 +15,6 @@ mistakes to avoid. Every example there is verified against the pinned
   `go install …/aql@latest` is blocked by replace directives) and run the
   suites — see [docs/how-to.md](docs/how-to.md#install-and-run-aql).
 - Tests live in `test/`: `_test.aql` = direct, `_spec.aql` = declarative.
-  Each suite ends by asserting `test.fail-count` is `0`.
+  Each suite ends by asserting `Test.fail-count` is `0`.
 - Known AQL-runtime gotchas observed with the pinned build are in
   `dx-report.md`.

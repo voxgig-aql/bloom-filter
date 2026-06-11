@@ -113,6 +113,54 @@ import "./bloom.aql" end
 ] "merge-mismatch-throws" Test.test end
 
 
+# --- merge: the mismatch error carries a dispatchable code ----------
+
+[
+  def a ({n: 1000, p: 0.01} Bloom.make end)
+  def b ({n:  500, p: 0.01} Bloom.make end)
+  def e (do [a Bloom.merge b end])
+  incompatible_merge/q (e get code) Assert.equal end
+] "merge-mismatch-code" Test.test end
+
+
+# --- make: out-of-range arguments raise bad_input -------------------
+
+[
+  def e1 (do [{n: 0, p: 0.01} Bloom.make end])
+  bad_input/q (e1 get code) Assert.equal end
+  def e2 (do [{n: 1000, p: 0.7} Bloom.make end])
+  bad_input/q (e2 get code) Assert.equal end
+  def e3 (do [{n: 1000} Bloom.make end])
+  bad_input/q (e3 get code) Assert.equal end
+] "make-validates-input" Test.test end
+
+
+# --- decode: rebuilds an encoded filter -----------------------------
+
+[
+  def bf ({n: 1000, p: 0.01} Bloom.make end)
+  def _h (bf Bloom.add "hello" end)
+  def _w (bf Bloom.add "world" end)
+  def back ((bf Bloom.encode end) Bloom.decode end)
+  true  (back Bloom.contains "hello" end) Assert.equal end
+  true  (back Bloom.contains "world" end) Assert.equal end
+  false (back Bloom.contains "absent" end) Assert.equal end
+  2 (back "added" get) Assert.equal end
+  true ((bf Bloom.params end) deq (back Bloom.params end)) Assert.equal end
+  (bf Bloom.encode end) (back Bloom.encode end) Assert.equal end
+] "decode-round-trips" Test.test end
+
+
+# --- decode: malformed payloads raise bad_payload --------------------
+
+[
+  def e1 (do ["this is not jsonic {" Bloom.decode end])
+  bad_payload/q (e1 get code) Assert.equal end
+  def e2 (do ["{n:100, p:0.05}" Bloom.decode end])
+  bad_payload/q (e2 get code) Assert.equal end
+] "decode-rejects-malformed" Test.test end
+
+
 # --- summary -------------------------------------------------------
 
 "---" print

@@ -7,13 +7,13 @@ items, with no false negatives and a false-positive rate you choose up
 front.
 
 ```aql
-import "./bloom.aql" end
+import "./bloom.aql"
 
 def seen ({n: 10000, p: 0.01} Bloom.make end)
 def _ (seen Bloom.add "ada" end)
 
-(seen Bloom.contains "ada" end) print   # => true
-(seen Bloom.contains "linus" end) print   # => false
+print ((seen Bloom.contains "ada" end)) end     # => true
+print ((seen Bloom.contains "linus" end)) end   # => false
 ```
 
 > **Calling this library from an AI coding agent?** Read
@@ -48,6 +48,7 @@ filters and just want the API? Jump to the [Reference](docs/reference.md).
 | `bf Bloom.params`        | report `{n, p, m, k}` |
 | `a Bloom.merge b`        | union two filters with matching `(m, k)` |
 | `bf Bloom.encode`        | serialize to a snapshot string |
+| `text Bloom.decode`      | rebuild a filter from a snapshot string |
 
 Full details, including the calling convention (every call ends with
 `end`), are in the [Reference](docs/reference.md).
@@ -87,7 +88,8 @@ test/bloom_prop_test.aql   property-based tests — direct (Test.check-prop)
 test/bloom_prop_spec.aql   property-based tests — declarative spec format
 test/bloom_smoke_test.aql  end-to-end smoke run over every public word
 docs/                      Diátaxis documentation (above)
-dx-report.md               developer-experience notes against aql @ db828ec
+dx-report.md               developer-experience notes against aql @ 958c379b
+proposals/                 language proposals raised from this module's DX
 ```
 
 Test files follow a consistent naming convention: `_test.aql` for
