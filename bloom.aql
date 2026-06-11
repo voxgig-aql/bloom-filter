@@ -2,19 +2,27 @@
 #
 # Public surface (the Bloom namespace exported at the bottom):
 #
-#   {n:Integer, p:Float} Bloom.make   → BloomFilter
-#   bf Bloom.add item                   → BloomFilter (mutated in place)
-#   bf Bloom.contains item              → Boolean
-#   bf Bloom.count                      → Integer  (cardinality estimate)
-#   bf Bloom.params                     → Map      ({n, p, m, k})
-#   a Bloom.merge b                     → BloomFilter (m and k must match)
+#   {n:Integer, p:Float} Bloom.make end → BloomFilter
+#   bf Bloom.add item               end → BloomFilter (mutated in place)
+#   bf Bloom.contains item          end → Boolean
+#   bf Bloom.count                  end → Integer  (cardinality estimate)
+#   bf Bloom.params                 end → Map      ({n, p, m, k})
+#   bf Bloom.encode                 end → String   (one-way jsonic snapshot)
+#   a Bloom.merge b                 end → BloomFilter (m and k must match)
+#
+# --- representation -------------------------------------------------
 #
 # BloomFilter is a `refine Object` subtype. Bit storage is a nested
 # `Bits` Object whose fields are stringified bit indices set to 1.
 #
-# Imported via `import "./bloom.aql"` from another script; that
-# script doesn't need to pre-import `aql:math` because the library
-# imports it itself.
+# Calling convention: the receiver/data comes first, then the verb, then
+# any extra arguments, and the call is terminated with `end` (or wrapped
+# in parens) — `bf Bloom.add item end`. Without a terminator the verb
+# swallows the following token, giving a wrong result or a dispatch error.
+#
+# Imported via `import "./bloom.aql"`; the importing script need not
+# pre-import the `aql:*` utilities (math-util, array-util, string-util,
+# bin-util) — this module imports them itself.
 
 
 import "aql:math-util" end
@@ -328,7 +336,7 @@ def bloom-merge fn [
 #
 # Functions are exported with `/r` so the auto-evaluating map literal
 # doesn't dispatch them at construction time. Types and bare values go
-# in bare. See REFERENCE.md §"Word modifiers".
+# in bare. See docs/reference.md §"Word modifiers".
 
 export "Bloom" {
   BloomFilter
