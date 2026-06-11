@@ -85,5 +85,6 @@ def safe (do [a Bloom.merge b end] error [ var [[e] "incompatible (n, p)" ] ])
 | `make BloomFilter {…}` | `{n, p} Bloom.make end` | Construct only via `Bloom.make`. |
 | `(bf Bloom.count end)` for an exact count | read `bf.added` / `Bloom.encode` | `count` is an estimate; `added` is exact. |
 
-If the full repo is available, `AGENTS.md` and `docs/reference.md` have
-the complete guide; `test/bloom_smoke_test.aql` is a runnable example.
+If the full repo is available, `AGENTS.md`, `api.json` (machine-readable
+signatures), and `docs/reference.md` have the complete guide;
+`test/bloom_smoke_test.aql` is a runnable example.
