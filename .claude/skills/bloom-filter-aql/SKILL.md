@@ -98,5 +98,6 @@ def back (snap Bloom.decode end)
 | `(bf Bloom.count end)` for an exact count | read `bf.added` / `Bloom.encode` | `count` is an estimate; `added` is exact. |
 | `"label" print (v) print` | `print (v) end`, one per statement | `print` collects forward; chains print out of order. |
 
-If the full repo is available, `AGENTS.md` and `docs/reference.md` have
-the complete guide; `test/bloom_smoke_test.aql` is a runnable example.
+If the full repo is available, `AGENTS.md`, `api.json` (machine-readable
+signatures), and `docs/reference.md` have the complete guide;
+`test/bloom_smoke_test.aql` is a runnable example.

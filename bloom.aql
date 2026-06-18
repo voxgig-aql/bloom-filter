@@ -21,9 +21,14 @@
 # BloomFilter is a sealed `class` instance. Bit storage is an Array
 # of 63-bit integer words mutated in place.
 #
-# Imported via `import "./bloom.aql"` from another script; that
-# script doesn't need to pre-import the util modules because the
-# library imports its own dependencies.
+# Calling convention: the receiver/data comes first, then the verb, then
+# any extra arguments, and the call is terminated with `end` (or wrapped
+# in parens) — `bf Bloom.add item end`. Without a terminator the verb
+# swallows the following token, giving a wrong result or a dispatch error.
+#
+# Imported via `import "./bloom.aql"`; the importing script need not
+# pre-import the `aql:*` utilities (math-util, array-util, bin-util,
+# struct-util) — this module imports them itself.
 
 
 import "aql:math-util"
@@ -360,7 +365,7 @@ def bloom-merge fn [
 #
 # Functions are exported with `/r` so the auto-evaluating map literal
 # doesn't dispatch them at construction time. Types and bare values go
-# in bare. See REFERENCE.md §"Word modifiers".
+# in bare. See docs/reference.md §"Word modifiers".
 
 export "Bloom" {
   BloomFilter

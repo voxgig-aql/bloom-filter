@@ -154,6 +154,8 @@ and output appears in source order.
 ## Where to look next
 
 - `docs/reference.md` — full signatures, stack-in columns, complexity.
+- `api.json` — the same API as a machine-readable manifest (exact call
+  shapes, argument order, return types).
 - `docs/how-to.md` — task recipes (sizing, merge, persist, test).
 - `test/bloom_smoke_test.aql` — a complete, runnable worked example.
 - `dx-report.md` — known AQL-runtime gotchas observed with this build.

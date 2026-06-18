@@ -141,7 +141,7 @@ meaningless. The check is a guard against silently-wrong results.
 
 ---
 
-## Design choices specific to this module
+## Design choices specific to this library
 
 ### Packed bit storage
 
