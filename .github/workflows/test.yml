@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
 
 env:
-  # aql-lang/aql @ main, 2026-06-11. Pinned to the exact commit this
+  # aql-lang/aql @ main, 2026-06-06. Pinned to the exact commit this
   # module is verified against.
-  AQL_REF: 7193a7d3c69857207e44b4bd53541b9b0d4348aa
+  AQL_REF: db828ecb6ee1d161ff177134478f42c56484f051
 
 jobs:
   test:
