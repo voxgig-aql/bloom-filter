@@ -210,6 +210,11 @@ def bloom-add fn [
         0
       ]
     ])
+    # The terminator here is load-bearing. `set` fills its receiver
+    # slot forward-first, so without `end`/`;` it grabs the next token
+    # (`bf`, a BloomFilter) as the receiver instead of the stack value.
+    # Same object here, so the result is identical — but keep it
+    # explicit so the receiver is unambiguous.
     bf set added (bf.added add 1) end
     bf
   ]
@@ -355,6 +360,8 @@ def bloom-merge fn [
         0
       ]
     ])
+    # Load-bearing terminator (as in bloom-add): without it, `set`
+    # grabs the trailing `a` as its receiver via forward-first fill.
     a set added (a.added add b.added) end
     a
   ]
