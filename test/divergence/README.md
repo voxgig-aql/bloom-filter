@@ -1,29 +1,21 @@
-# Interpreter vs. bytecode differential test
+# Three-way test check: interpreter · check · byte compiler
 
-Newer `aql` can run a program two ways over the same strict-stack engine,
-selectable from the command line:
+This library's `.aql` suites are written once and must mean the same thing
+no matter how `aql` runs them. `run.sh` runs every suite through all three
+execution surfaces and asserts none errors or disagrees:
 
 ```bash
-aql script.aql                 # interpreter — the default; what CI and users run
-aql --compile script.aql       # bytecode when compilable, else a SILENT fallback
-                               #   to the interpreter. Documented to be IDENTICAL
-                               #   to the interpreter — "opt-in performance, never
-                               #   semantics."
-aql --force-compile script.aql # REQUIRE the bytecode path; abort with the refusal
-                               #   reason instead of falling back.
+aql X            # interpreter — the default; what CI and users run
+aql check X      # static type-check — must report 0 errors
+aql --compile X  # byte compiler — bytecode when compilable, else a SILENT
+                 #   fallback to the interpreter; documented to be IDENTICAL
+                 #   to it ("opt-in performance, never semantics")
 ```
 
-(The `AQL_COMPILE` / `AQL_FORCE_COMPILE` / `AQL_NO_COMPILE` env vars do the
-same.) This harness asserts aql's own TRY-mode contract on this library:
-
-```
-aql --compile X  ==  aql X     for every script X
-```
-
-A difference is an **upstream soundness bug** — the compiled path changed a
-result, or TRY mode failed to fall back — not a bloom bug. The library's
-`.aql` suites are written once and must mean the same thing on either
-backend.
+It also prints an `aql --force-compile X` coverage line per suite — how much
+of each program the bytecode emitter can fully lower today. Refusals there
+are expected gaps (under `--compile` they fall back to the interpreter), not
+failures.
 
 ## Running it
 
@@ -31,86 +23,70 @@ backend.
 test/divergence/run.sh
 ```
 
-`run.sh` builds an aql that has the bytecode CLI (pinned in the script —
-the flags did **not** exist at the library's verified pin `7193a7d3`, so
-this deliberately builds a *newer* aql, independent of the library's own
-pin), then for each suite runs it under the interpreter and under
-`--compile` and diffs the output. It also prints a `--force-compile`
-coverage line per script — how much of each program the emitter can fully
-lower today (refusals there are expected gaps, not failures). Needs `go` +
-network for the one-time build (cached in `~/.cache/aql-divergence`).
+`run.sh` builds an aql that has the bytecode + modern check passes (pinned in
+the script — the `--compile` CLI did **not** exist at the library's verified
+pin `7193a7d3`, so this deliberately builds a *newer* aql, independent of the
+library's own pin), then prints a per-suite matrix:
 
-The harness exits non-zero only on an **unexpected** divergence: a script
-not in `QUARANTINE` whose `--compile` output differs, or a quarantined
-script that has started matching again (time to un-quarantine it).
+```
+  SUITE                         INTERPRETER   CHECK           BYTECODE
+  bloom_unit_test.aql           ok            ok              ok
+  bloom_unit_spec.aql           ok            ok              ok
+  bloom_prop_test.aql           ok            ok              ok
+  bloom_prop_spec.aql           ok            ok              ok
+  bloom_smoke_test.aql          ok            ok              ok
+```
 
-## The finding (aql @ `c44d994`)
+It exits non-zero on any interpreter failure, any check **error**, or any
+difference between `aql --compile X` and `aql X`. Needs `go` + network for the
+one-time build (cached in `~/.cache/aql-divergence`).
 
-Two headlines, one good and one bad.
+## Background: the byte-compiler divergence this guards against
 
-**Good — the bytecode backend now runs the bloom core, identically.** At
-the library's pin (`7193a7d3`) the bytecode path could not execute the
-library at all. On current aql, the loop-free core —
-`make` / `add` / `contains` / `merge` / `encode` / `decode` — fully
-compiles under `--force-compile` and returns byte-identical results to the
-interpreter (the `core-ops (control)` line). The smoke test and
-declarative/property suites also match under `--compile`.
+`aql --compile` is documented to return results identical to the interpreter
+(it falls back to the interpreter for anything it can't lower). One upstream
+bug breaks that promise, and the suites are written to stay clear of it.
 
-**Bad — `--compile` diverges from the interpreter on
-`test/bloom_unit_test.aql`,** which violates the "identical, never
-semantics" contract. Reduced repro (passes on the interpreter, fails under
-`--compile` and `--force-compile`):
+A compiled `each` body **drops a block-local binding** from the enclosing
+block. Reduced repro (passes on the interpreter, wrong under `--compile`):
 
 ```aql
 import "aql:test" end
 import "./bloom.aql" end
-[
-  def bf ({n: 1000, p: 0.01} Bloom.make end)
-  def _ (iota 50 each [
-    var [[i]
-      def key (convert String i)
-      bf Bloom.add key end
-      0
-    ]
-  ])
+[ def bf ({n: 1000, p: 0.01} Bloom.make end)
+  def _ (iota 50 each [ var [[i] bf Bloom.add (convert String i) end 0 ] ])
   def cnt (bf Bloom.count end)
   true (45 lte cnt) Assert.equal end
-  true (cnt lte 55) Assert.equal end
-] "count-within-tolerance" Test.test end
+] "count" Test.test end
+# interpreter => passes
+# --compile   => each: element 0: [aql/undefined_word]: undefined word: bf
 ```
 
-```
-interpreter   => fail count 0   (passes)
---compile     => FAIL count-within-tolerance — each: element 0:
-                 [aql/undefined_word]: undefined word: bf
-```
+Inside the `each` the compiled path can't see the block-local `bf`, so
+`bf Bloom.add …` raises `undefined word: bf`. The emitter believes it can
+lower the body, so `--compile` (TRY) does **not** fall back, and the wrong
+result escapes — breaking the "identical, never semantics" contract. The
+trigger is narrow: a *block-local* `def` referenced from an `each` body. A
+**top-level** binding survives; a single-expression top-level loop is instead
+*refused* (`each` Stage 2/3) and falls back cleanly.
 
-Inside the `each` body the compiled path **loses the `bf` binding** from
-the enclosing block, so `bf Bloom.add …` raises `undefined word: bf`.
-Crucially this surfaces under `--compile` (TRY) too: the emitter believes
-it can lower the body, so it does **not** fall back to the interpreter, and
-the wrong result escapes. (`--force-compile` reports the suite as
-`compiled` rather than refusing — it runs and gets the wrong answer.)
+So `test/bloom_unit_test.aql` builds its bulk fixture (`_seen`) at **top
+level** instead of inside the `Test.test` block — which both keeps it in
+scope for the compiler and (the underscore) skips `aql check`'s unused_def
+false positive for body-only defs. With that one structural choice every
+suite is green under all three surfaces. This is an upstream aql bug, not a
+bloom defect; it is recorded in `../../dx-report.md` §3, and this harness is
+the regression guard.
 
-This is narrow: only an `each` body that both references an outer `def` and
-carries a multi-statement body (`def key` … `add` … `0`) trips it. A
-single-expression `each` body, or the same loop at top level, is instead
-*refused* (`each` Stage 2/3, `operand … not statically materialisable`) and
-under `--compile` falls back cleanly — no divergence. The other four suites
-either compile identically or refuse-and-fall-back.
-
-So today the bloom library is correct on the interpreter (every `.aql`
-suite is green, and the `aql` CLI uses the interpreter by default), but it
-is **not yet safe to run under `--compile`** — `bloom_unit_test.aql` is
-quarantined here until upstream fixes the each-body scope capture. The
-harness pins the boundary so the quarantine clears automatically when it
-does.
+Tested against aql `c44d994`. `--force-compile` still refuses `each`/`get`
+(emitter coverage, Stage 2/3) — expected, and harmless because `--compile`
+falls back.
 
 ### Wiring it into CI
 
 `run.sh` is self-contained, so a gating job is one block (add it to
-`.github/workflows/test.yml` — needs a token with `workflow` scope, which
-the agent session that wrote this didn't have):
+`.github/workflows/test.yml` — needs a token with `workflow` scope, which the
+agent session that wrote this didn't have):
 
 ```yaml
   divergence:
@@ -120,6 +96,6 @@ the agent session that wrote this didn't have):
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
-      - name: Interpreter vs bytecode differential test
+      - name: interpreter / check / byte-compiler agreement
         run: test/divergence/run.sh
 ```

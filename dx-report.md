@@ -125,17 +125,15 @@ Most of it holds — and that is real progress: the loop-free core
 (`make`/`add`/`contains`/`merge`/`encode`/`decode`) now **fully compiles**
 under `--force-compile` and returns byte-identical results, where at this
 module's pin (`7193a7d3`) the bytecode path couldn't run the library at
-all. But one suite **diverges**: `test/bloom_unit_test.aql` passes on the
-interpreter and fails under `--compile`. Reduced repro:
+all. The one sharp edge: a compiled `each` body **drops a block-local
+binding** from the enclosing block. Reduced repro (passes on the
+interpreter, wrong under `--compile`):
 
 ```aql
 import "aql:test" end
 import "./bloom.aql" end
 [ def bf ({n: 1000, p: 0.01} Bloom.make end)
-  def _ (iota 50 each [ var [[i]
-    def key (convert String i)
-    bf Bloom.add key end
-    0 ] ])
+  def _ (iota 50 each [ var [[i] bf Bloom.add (convert String i) end 0 ] ])
   def cnt (bf Bloom.count end)
   true (45 lte cnt) Assert.equal end
 ] "count-within-tolerance" Test.test end
@@ -143,21 +141,24 @@ import "./bloom.aql" end
 # --compile   => each: element 0: [aql/undefined_word]: undefined word: bf
 ```
 
-Inside the `each` body the compiled path **loses the enclosing `def bf`
-binding**, so `bf Bloom.add …` raises `undefined word: bf`. The damage is
-that this leaks through `--compile` (TRY): the emitter thinks it can lower
-the body, so it does *not* fall back to the interpreter, and the wrong
-result escapes — breaking the "identical, never semantics" guarantee.
-Trigger is narrow (an `each` body that both references an outer `def` and
-has a multi-statement body); a single-expression body or the same loop at
-top level is instead *refused* and falls back cleanly. Upstream aql bug,
-not a bloom defect: every `.aql` suite is green on the interpreter, which
-is what the CLI runs by default. The library is simply **not yet safe under
-`--compile`**; `test/divergence/` quarantines the one diverging suite and
-clears the quarantine automatically when upstream fixes the scope capture.
-Tested against aql `c44d994` (the divergence harness builds a newer aql
-than this module's pin, since the bytecode CLI postdates `7193a7d3`). See
-`test/divergence/README.md`.
+Inside the `each` the compiled path can't see the block-local `bf`, so
+`bf Bloom.add …` raises `undefined word: bf`. The damage is that this leaks
+through `--compile` (TRY): the emitter thinks it can lower the body, so it
+does *not* fall back to the interpreter, and the wrong result escapes —
+breaking the "identical, never semantics" guarantee. Trigger is narrow: a
+*block-local* `def` referenced from an `each` body. A **top-level** binding
+survives; a single-expression top-level loop is instead *refused* (`each`
+Stage 2/3) and falls back cleanly. Upstream aql bug, not a bloom defect.
+
+The fix on our side is one structural choice: `test/bloom_unit_test.aql`
+builds its bulk fixture (`_seen`) at **top level** rather than inside the
+`Test.test` block — keeping it in scope for the compiler, and (the leading
+underscore) skipping `aql check`'s unused_def false positive for body-only
+defs. With that, every suite is clean across all three surfaces
+(interpreter, `aql check` with 0 errors, and `aql --compile` identical to
+the interpreter); `test/divergence/run.sh` enforces it. Tested against aql
+`c44d994` (the harness builds a newer aql than this module's pin, since the
+bytecode CLI postdates `7193a7d3`). See `test/divergence/README.md`.
 
 ---
 
@@ -215,4 +216,4 @@ this module's history):
 | — | — | `jsonify` stringifies Floats (was §7 🟢) | **fixed** (`862546fd`) |
 | 1 | 🟡 | `print` forward-collection reverses/breaks | unchanged (3rd report) |
 | 2 | 🟢 | `aql check`: false `mul` no_signature; export-map words flagged unused | improved, still open |
-| 3 | 🟡 | bytecode `--compile` diverges from interpreter: `each` body loses an outer `def` binding | new (differential test, `test/divergence/`; aql `c44d994`) |
+| 3 | 🟡 | bytecode `--compile` drops a block-local `def` referenced from an `each` body (worked around: top-level fixture) | new (3-mode check, `test/divergence/`; aql `c44d994`) |
