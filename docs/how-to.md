@@ -260,3 +260,22 @@ explicitly, which is why it carries the expensive O(m) properties
 Each test file ends by asserting `Test.fail-count` is `0`, so a failure
 makes `aql` exit non-zero — which is exactly what the
 [CI workflow](../.github/workflows/test.yml) checks on every push and pull request.
+
+One more test sits outside this set. `test/divergence/` is a
+*differential* test that runs each suite through both of AQL's execution
+backends — the interpreter the CLI uses by default, and the bytecode path
+(newer aql's `--compile` / `--force-compile`) — and asserts they never
+disagree. Run it with:
+
+```bash
+test/divergence/run.sh
+```
+
+It builds a newer aql (the bytecode CLI flags postdate this module's pin),
+runs every suite under the interpreter and under `--compile`, and reports.
+See [`test/divergence/README.md`](../test/divergence/README.md) for the
+current finding: the bytecode backend now runs the loop-free core
+identically, but `--compile` still diverges on one suite
+(`bloom_unit_test.aql`, an `each` body that loses an outer `def` binding),
+so the library is correct on the interpreter but not yet safe under
+`--compile`.

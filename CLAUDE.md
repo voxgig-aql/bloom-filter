@@ -22,6 +22,11 @@ mistakes to avoid. Every example there is verified against the pinned
   `_spec` = declarative spec; `unit` = example-based, `prop` = property-based.
   Each assertion-bearing suite ends by asserting `Test.fail-count` is `0` and
   prints `all green`.
+- `test/divergence/` is a differential test (`test/divergence/run.sh`) that
+  checks the AQL interpreter and bytecode backends agree, driving the
+  bytecode path through newer aql's `--compile`/`--force-compile` CLI flags
+  (it builds a newer aql than this module's pin, since those flags postdate
+  it). See its `README.md`; the finding is `dx-report.md` §3.
 - Known AQL-runtime gotchas observed with the pinned build are in
   `dx-report.md`. The pinned aql commit is single-sourced in `.github/workflows/test.yml`
   (`AQL_REF`); a CI job fails if the hook or `api.json` drift from it.
