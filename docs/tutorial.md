@@ -20,14 +20,14 @@ build it up in pieces and run it after each step.
 Create a file `seen.aql` next to `bloom.aql` with this content:
 
 ```aql
-import "./bloom.aql" end
+import "./bloom.aql"
 
-# AQL currently emits a program's first printed line last; printing one
-# blank line up front keeps the rest in source order.
-"" print
+# Print one value per statement, fully grouped — `print (value) end` —
+# and output appears in source order. (Chained `(a) print (b) print`
+# pairs print out of order, because print collects a forward argument.)
 
 def seen ({n: 10000, p: 0.01} Bloom.make end)
-`params:      ${(seen Bloom.params end)}` print
+print (`params:      ${(seen Bloom.params end)}`) end
 ```
 
 `Bloom.make` takes an options map: `n` is how many distinct items you
@@ -69,9 +69,9 @@ call stops. Forget it and the next token gets swallowed as an argument.
 Now query it. `Bloom.contains` returns a Boolean:
 
 ```aql
-`ada seen?    ${(seen Bloom.contains "ada" end)}` print
-`grace seen?  ${(seen Bloom.contains "grace" end)}` print
-`linus seen?  ${(seen Bloom.contains "linus" end)}` print
+print (`ada seen?    ${(seen Bloom.contains "ada" end)}`) end
+print (`grace seen?  ${(seen Bloom.contains "grace" end)}`) end
+print (`linus seen?  ${(seen Bloom.contains "linus" end)}`) end
 ```
 
 Run the whole file:
@@ -96,7 +96,7 @@ The filter can estimate its own cardinality without storing the items.
 Add:
 
 ```aql
-`distinct ~   ${(seen Bloom.count end)}` print
+print (`distinct ~   ${(seen Bloom.count end)}`) end
 ```
 
 ```console
@@ -124,11 +124,10 @@ filter for 50 items at a 10 % rate, fills it with exactly those 50
 items, then queries 1 000 keys that were never added:
 
 ```aql
-import "./bloom.aql" end
-"" print
+import "./bloom.aql"
 
 def bf ({n: 50, p: 0.1} Bloom.make end)
-`params: ${(bf Bloom.params end)}` print
+print (`params: ${(bf Bloom.params end)}`) end
 
 # add exactly the 50 items it was sized for
 def _ (iota 50 each [ var [[i] bf Bloom.add `item-${i}` end 0 ] ])
@@ -140,17 +139,17 @@ def hits (iota 1000 each [
     if (bf Bloom.contains key end) [1] [0]
   ]
 ])
-`false positives among 1000 un-added keys: ${(0 hits [add end] fold)}` print
+print (`false positives among 1000 un-added keys: ${(0 hits [add end] fold)}`) end
 ```
 
 ```console
 $ aql falsepos.aql
 params: {k:3 m:240 n:50 p:0.1}
-false positives among 1000 un-added keys: 79
+false positives among 1000 un-added keys: 97
 ```
 
-Of the 1 000 keys we never added, 921 correctly read `false` and only
-79 — about 8 % — were false positives, right around the 10 % we asked
+Of the 1 000 keys we never added, 903 correctly read `false` and only
+97 — about 10 % — were false positives, right at the 10 % we asked
 for. Loaded to the capacity it was built for, the filter delivers the
 error rate you specified. Size it for fewer items (smaller `n`) or
 overfill it and that rate climbs; the math behind the trade-off is in

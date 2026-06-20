@@ -16,9 +16,10 @@ fi
 
 log() { echo "[session-start] $*" >&2; }
 
-# Keep this in lockstep with ci/test.yml's AQL_REF (the consistency CI job
-# fails if they drift). Full 40-char commit so the build is reproducible.
-AQL_REF=db828ecb6ee1d161ff177134478f42c56484f051
+# Keep this in lockstep with .github/workflows/test.yml's AQL_REF (the
+# consistency CI job fails if they drift). Full 40-char commit so the build
+# is reproducible.
+AQL_REF=7193a7d3c69857207e44b4bd53541b9b0d4348aa
 BIN_DIR="$HOME/.local/bin"
 AQL="$BIN_DIR/aql"
 

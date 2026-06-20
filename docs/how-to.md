@@ -13,6 +13,7 @@ bloom filter is; if not, start with the [Tutorial](tutorial.md). For the
 - [Merge two filters](#merge-two-filters)
 - [Handle an incompatible merge](#handle-an-incompatible-merge)
 - [Serialize a filter](#serialize-a-filter)
+- [Reload a serialized filter](#reload-a-serialized-filter)
 - [Use the filter from your own script](#use-the-filter-from-your-own-script)
 - [Run the tests](#run-the-tests)
 
@@ -44,7 +45,7 @@ Run any script in this repo by passing its path:
 aql test/bloom_smoke_test.aql
 ```
 
-This module is verified against aql commit `db828ec`; the CI workflow
+This module is verified against aql commit `7193a7d3`; the CI workflow
 (`.github/workflows/test.yml`) pins the same commit.
 
 ---
@@ -56,7 +57,7 @@ false-positive rate you'll tolerate, in `(0, 0.5]`), and hand them to
 `Bloom.make`:
 
 ```aql
-import "./bloom.aql" end
+import "./bloom.aql"
 def bf ({n: 100000, p: 0.001} Bloom.make end)
 (bf Bloom.params end) print
 # => {"k": 10, "m": 1437759, "n": 100000, "p": 0.001}
@@ -64,8 +65,10 @@ def bf ({n: 100000, p: 0.001} Bloom.make end)
 
 You do not choose the bit width or hash count — `m` and `k` are derived
 to meet your `p` at load `n`. Smaller `p` costs more bits. Inspect the
-result with `Bloom.params`. (How the numbers are derived:
-[Explanation → Sizing](explanation.md#sizing-the-filter).)
+result with `Bloom.params`. Out-of-range arguments (a non-integer or
+non-positive `n`, a `p` outside `(0, 0.5]`, or a missing key) raise a
+`bad_input` error rather than building a useless filter. (How the
+numbers are derived: [Explanation → Sizing](explanation.md#sizing-the-filter).)
 
 ---
 
@@ -77,8 +80,8 @@ result with `Bloom.params`. (How the numbers are derived:
 ```aql
 def _ (bf Bloom.add "user@example.com" end)
 
-(bf Bloom.contains "user@example.com" end) print   # => true
-(bf Bloom.contains "nobody@example.com" end) print # => false  (guaranteed correct)
+print ((bf Bloom.contains "user@example.com" end)) end   # => true
+print ((bf Bloom.contains "nobody@example.com" end)) end # => false  (guaranteed correct)
 ```
 
 A `false` is always correct. A `true` means "probably present" — verify
@@ -98,14 +101,14 @@ def _ (iota 1000 each [
 ## Estimate how many distinct items you've added
 
 ```aql
-(bf Bloom.count end) print
+print ((bf Bloom.count end)) end
 ```
 
 `count` returns an **estimate** derived from the bit pattern, not a
 stored tally, so it drifts a little as the filter fills. If you need the
 *exact* number of `add` calls instead, read the `added` field — it is
-returned alongside the params by `Bloom.encode`, or accessible as
-`bf.added` inside a typed fn. (Background:
+accessible directly as `bf.added` and is also carried in the
+`Bloom.encode` snapshot. (Background:
 [Explanation → Estimating cardinality](explanation.md#estimating-cardinality).)
 
 ---
@@ -122,8 +125,8 @@ def _a (a Bloom.add "from-a" end)
 def _b (b Bloom.add "from-b" end)
 
 def merged (a Bloom.merge b end)
-(merged Bloom.contains "from-a" end) print   # => true
-(merged Bloom.contains "from-b" end) print   # => true
+print ((merged Bloom.contains "from-a" end)) end   # => true
+print ((merged Bloom.contains "from-b" end)) end   # => true
 ```
 
 `merge` mutates the first filter (`a`) in place, so `a` and `merged` are
@@ -134,30 +137,36 @@ distributed counting — build filters independently, then union them.
 
 ## Handle an incompatible merge
 
-`merge` requires both filters to share `m` and `k`; otherwise it raises.
-Wrap the call in `do … error …` to recover:
+`merge` requires both filters to share `m` and `k`; otherwise it raises
+an `incompatible_merge` error whose message names the mismatched
+parameter. Wrap the call in `do … error …` to recover; inside the
+handler the Error value is on the stack, with `code` and `message`
+fields:
 
 ```aql
 def a ({n: 1000, p: 0.01} Bloom.make end)
 def b ({n:  500, p: 0.01} Bloom.make end)   # different n → different m
 
 def result (do [a Bloom.merge b end] error [
-  var [[e] "filters are incompatible — rebuild b with a's (n, p)" ]
+  get message
 ])
 result print
-# => filters are incompatible — rebuild b with a's (n, p)
+# => Bloom.merge: filters disagree on m (9586 vs 4793); build both with the same (n, p)
 ```
 
-Inside the `error` handler the raised value is on the stack; here we
-`drop` it (via the `var` binding) and substitute a message. In a test,
-assert the failure instead:
+To branch on the code instead, dispatch with `case` —
+`get code case [incompatible_merge/q "rebuild b" "unexpected"]`. In a
+test, assert the failure (or its exact code):
 
 ```aql
+import "aql:test"
 [a Bloom.merge b end] Assert.throws end
+def e (do [a Bloom.merge b end])
+incompatible_merge/q (e get code) Assert.equal end
 ```
 
-(Why the raised error reads `undefined_word`:
-[Explanation → Raising errors](explanation.md#raising-errors-in-aql-db828ec).)
+(Why the module raises coded errors:
+[Explanation → Raising errors](explanation.md#raising-errors).)
 
 ---
 
@@ -169,31 +178,50 @@ the set bit indices — suitable for logging or persistence:
 ```aql
 def snap ({n: 1000, p: 0.01} Bloom.make end)
 def _ (snap Bloom.add "x" end)
-(snap Bloom.encode end) print
-# => {added:1 k:7 m:9586 n:1000 p:0.01 set:[223 1110 2827 3714 4601 6318 7205]}
+print ((snap Bloom.encode end)) end
+# => {added:1 k:7 m:9586 n:1000 p:0.01 set:[603 2193 2602 4192 4601 6191 8190]}
 ```
 
-There is no `decode` in the public API yet, so treat `encode` as a
-one-way snapshot. To "reload," rebuild a filter with the same `(n, p)`
-and re-add the items, or read the snapshot's fields yourself.
+---
+
+## Reload a serialized filter
+
+`Bloom.decode` rebuilds a filter from an encode snapshot — the round
+trip preserves the parameters, the exact `added` count, and every set
+bit:
+
+```aql
+def text (snap Bloom.encode end)
+def back (text Bloom.decode end)
+print ((back Bloom.contains "x" end)) end   # => true
+```
+
+The rebuilt filter is independent of the original (mutating one does
+not touch the other). Malformed input — unparseable text, or a payload
+missing any of `n p m k added set` — raises a `bad_payload` error.
+
+One caveat: the bit indices are produced by this module's hash
+functions, so a snapshot is portable across processes running the
+*same* module version, not across versions that changed the hashing.
 
 ---
 
 ## Use the filter from your own script
 
 Import the library by relative path; you do **not** need to import
-`aql:math-util` or `aql:array-util` yourself — `bloom.aql` pulls in its own
-dependencies:
+`aql:math-util`, `aql:array-util`, `aql:bin-util`, or `aql:struct-util`
+yourself — `bloom.aql` pulls in its own dependencies:
 
 ```aql
-import "./bloom.aql" end
+import "./bloom.aql"
 
 def bf ({n: 1000, p: 0.01} Bloom.make end)
 # … use the Bloom namespace …
 ```
 
-Every `Bloom.*` call must end with `end` (or be wrapped in parens) so
-the word doesn't swallow the following token. `test/bloom_smoke_test.aql`
+(No `end` is needed after `import` on the pinned build.) Every
+`Bloom.*` call must end with `end` (or be wrapped in parens) so the
+word doesn't swallow the following token. `test/bloom_smoke_test.aql`
 is a complete worked example you can copy from.
 
 ---
@@ -227,7 +255,7 @@ with `Test.run-property` at the default 100 iterations — clean, but the
 run count is fixed. `bloom_prop_test.aql` calls the imperative
 `Test.check-prop` driver directly, passing `runs`/`seed`/`max-shrinks`
 explicitly, which is why it carries the expensive O(m) properties
-(merge, encode) at a smaller run budget.
+(merge, encode, decode) at a smaller run budget.
 
 Each test file ends by asserting `Test.fail-count` is `0`, so a failure
 makes `aql` exit non-zero — which is exactly what the

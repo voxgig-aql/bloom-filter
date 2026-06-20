@@ -1,23 +1,26 @@
 ---
 name: bloom-filter-aql
-description: Use when writing or editing AQL code that calls the Bloom bloom-filter library — Bloom.make / Bloom.add / Bloom.contains / Bloom.count / Bloom.params / Bloom.merge / Bloom.encode, or any file that does `import "./bloom.aql" end`. Provides the exact AQL calling convention (which is not C/Python/JS), the API with mutation and probabilistic semantics, verified copy-paste idioms, and fixes for the mistakes agents most often make (foreign call syntax like `bf.contains(x)`, missing `end` terminators, assuming `add` returns a new filter).
+description: Use when writing or editing AQL code that calls the Bloom bloom-filter library — Bloom.make / Bloom.add / Bloom.contains / Bloom.count / Bloom.params / Bloom.merge / Bloom.encode / Bloom.decode, or any file that does `import "./bloom.aql"`. Provides the exact AQL calling convention (which is not C/Python/JS), the API with mutation and probabilistic semantics, verified copy-paste idioms, and fixes for the mistakes agents most often make (foreign call syntax like `bf.contains(x)`, missing `end` terminators, assuming `add` returns a new filter).
 ---
 
 # Calling the Bloom bloom-filter library (AQL)
 
 A probabilistic set: "have I seen this item?" in little memory, with **no
 false negatives** and a tunable false-positive rate. Public surface = the
-`Bloom` namespace. Everything below is verified against `aql @ db828ec`.
+`Bloom` namespace. Everything below is verified against `aql @ 7193a7d3`.
 
 ## Import
 
 ```aql
-import "./bloom.aql" end
+import "./bloom.aql"
 ```
 
 - Path resolves relative to the **working directory the script runs
   from**, not the importing file. Adjust the relative path accordingly.
-- Do **not** import `aql:math-util` or `aql:array-util` — the library does it.
+- No `end` is needed after `import` on this build (a trailing `end` is
+  harmless).
+- Do **not** import `aql:math-util` / `aql:array-util` / `aql:bin-util` /
+  `aql:struct-util` — the library does it.
 
 ## The one calling rule
 
@@ -36,25 +39,27 @@ dispatch error.
 
 | Call | Returns | Notes |
 |------|---------|-------|
-| `{n: Integer, p: Float} Bloom.make end` | `BloomFilter` | `n` = expected distinct items; `p` = target false-positive rate in `(0, 0.5]`. |
+| `{n: Integer, p: Float} Bloom.make end` | `BloomFilter` | `n` = expected distinct items; `p` = target false-positive rate in `(0, 0.5]`. Bad arguments raise `bad_input`. |
 | `bf Bloom.add item end` | the **same** `bf` (mutated in place) | Any value, stringified internally. |
 | `bf Bloom.contains item end` | `Boolean` | `false` = **definitely never added**; `true` = *probably* added (false-positive rate ≈ `p`). |
 | `bf Bloom.count end` | `Integer` | **Estimate** of distinct items, not a tally. Empty ⇒ `0`. |
 | `bf Bloom.params end` | `Map` | `{n, p, m, k}`. |
-| `a Bloom.merge b end` | the **same** `a` (mutated) | Union into `a`. Requires identical `m`/`k` (same `(n, p)`); else raises. |
-| `bf Bloom.encode end` | `String` | jsonic snapshot; one-way (no `decode`). |
+| `a Bloom.merge b end` | the **same** `a` (mutated) | Union into `a`. Requires identical `m`/`k` (same `(n, p)`); else raises `incompatible_merge`. |
+| `bf Bloom.encode end` | `String` | jsonic snapshot; round-trips through `Bloom.decode`. |
+| `text Bloom.decode end` | `BloomFilter` | Rebuild from a snapshot; malformed text raises `bad_payload`. |
 
 Construct filters only via `Bloom.make`; treat `BloomFilter` fields as
-read-only.
+read-only. Catch errors with `do […] error […]`; read `e get code` /
+`e get message` in the handler.
 
 ## Idioms (verified)
 
 ```aql
-import "./bloom.aql" end
+import "./bloom.aql"
 def seen ({n: 10000, p: 0.01} Bloom.make end)
 def _ (seen Bloom.add "ada" end)
-(seen Bloom.contains "ada"   end) print   # => true
-(seen Bloom.contains "linus" end) print   # => false
+print ((seen Bloom.contains "ada"   end)) end   # => true
+print ((seen Bloom.contains "linus" end)) end   # => false
 ```
 
 Add many (each body must yield a value — push `0`):
@@ -70,7 +75,14 @@ Merge (both built with the same `(n, p)`); guard the incompatible case:
 
 ```aql
 def merged (a Bloom.merge b end)
-def safe (do [a Bloom.merge b end] error [ var [[e] "incompatible (n, p)" ] ])
+def safe (do [a Bloom.merge b end] error [ get message ])
+```
+
+Persist and reload:
+
+```aql
+def snap (bf Bloom.encode end)
+def back (snap Bloom.decode end)
 ```
 
 ## Common mistakes
@@ -81,9 +93,10 @@ def safe (do [a Bloom.merge b end] error [ var [[e] "incompatible (n, p)" ] ])
 | `bf Bloom.add "x"` mid-expression, no terminator | `bf Bloom.add "x" end` | The verb swallows the next token. |
 | keep a pre-`add` copy of `bf` | none — `add` mutates in place | The argument and the return value are the same object. |
 | trust `contains ⇒ true` | verify against the real store | `true` is probabilistic; only `false` is certain. |
-| `a Bloom.merge b end` with different `(n, p)` | same `(n, p)` for both | Mismatch raises `undefined_word: bloom-merge-requires-equal-m`/`-k`. |
+| `a Bloom.merge b end` with different `(n, p)` | same `(n, p)` for both | Mismatch raises `incompatible_merge`. |
 | `make BloomFilter {…}` | `{n, p} Bloom.make end` | Construct only via `Bloom.make`. |
 | `(bf Bloom.count end)` for an exact count | read `bf.added` / `Bloom.encode` | `count` is an estimate; `added` is exact. |
+| `"label" print (v) print` | `print (v) end`, one per statement | `print` collects forward; chains print out of order. |
 
 If the full repo is available, `AGENTS.md`, `api.json` (machine-readable
 signatures), and `docs/reference.md` have the complete guide;

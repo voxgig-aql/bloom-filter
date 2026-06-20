@@ -1,194 +1,169 @@
 # Developer-experience report: bloom-filter on AQL
 
-**Date:** 2026-06-06
-**AQL build under test:** `aql-lang/aql` @ `db828ec` (built locally from a
-source tarball with `GOFLAGS=-mod=mod`; version string reported as
-`aql db828ecb6ee1d161ff177134478f42c56484f051`).
-**Context:** building, testing, refactoring, and then upgrading this
-bloom-filter module from `5b983b6` to `db828ec`. Everything below was
-reproduced first-hand against the build above; each item carries a
-minimal repro you can paste into a `.aql` file and run.
+**Date:** 2026-06-11 (second round)
+**AQL build under test:** `aql-lang/aql` @ `7193a7d3`
+(`7193a7d3c69857207e44b4bd53541b9b0d4348aa`, main as of 2026-06-11;
+39 commits past `958c379b`, which this report previously covered;
+built locally with `GOFLAGS=-mod=mod`; version string now reports
+`aql 0.1.0-dev (git 7193a7d3c698)`).
+**Context:** re-verification round. The first 2026-06-11 report (at
+`958c379b`) filed eight issues after migrating this module to the
+class/Array/raise surface. Six of the eight — including all three
+🔴 — were fixed upstream within the same day's 39 commits, several
+visibly in direct response to the DX reports. Every verdict below was
+re-reproduced first-hand against the build above using the original
+minimal repros; the module's five test suites pass on this build
+unmodified.
 
-Severity: **🔴 high** (silent wrong results / blocks a use case) ·
+Severity: **🔴 high** (silent wrong results / crash / blocks a use case) ·
 **🟡 medium** (friction, clear workaround) · **🟢 low** (papercut).
 
 ---
 
-## Fixed since the `5b983b6` report
+## Fixed since the `958c379b` report
 
-Three issues from the previous report are resolved in `db828ec`:
-
-- **Forward `set` now mutates a `refine Object`.** `b set k v` used to be
-  a silent no-op through a typed param; it now persists at the top level
-  and through ordinary typed-param fns. *(But see §1 — it regresses
-  inside a `Test.test` sub-engine, so it isn't fully usable yet.)*
-
-- **A library that uses `export` can be run directly.** `aql bloom.aql`
-  now exits `0` instead of `undefined word: export` — `export` is a
-  top-level no-op outside an import context. The separate runnable entry
-  point (`test/bloom_smoke_test.aql`) is no longer strictly required.
-
-- **A failing `Test.test` names the case.** Output is now
-  `FAIL <name> — [aql/assertion_failure]: Assert.equal: expected X, got Y`,
-  so you no longer have to bisect to find which case failed.
+- **🔴→✅ Guard `if` + following `def`: guards fire first now**
+  (aql `00cb7a79`, "guards fire before the next statement"). The
+  defining repro — an else-less validation `if` whose `raise` was
+  pre-empted by eager evaluation of the next `def` statement — now
+  raises the guard's own error:
 
   ```aql
-  import "aql:test" end
-  [ true false Assert.equal end ] "my-failing-case" Test.test end
-  # FAIL my-failing-case — [aql/assertion_failure]: Assert.equal: expected false, got true
+  def t fn [ [x:Any] [Integer] [
+    if ((x is Float) not) [
+      def m "not a float"
+      raise bad_input m
+    ]
+    def y (x gt 0.0)
+    7
+  ] ]
+  do [t none] error [ get code ]    # => bad_input  (was: incomparable)
   ```
+
+  `bloom.aql` keeps the explicit empty else `[]` on its guards anyway —
+  it costs nothing, reads as intent, and stays correct on older builds.
+
+- **🔴→✅ Class-field defaults are per-instance** (aql `607cd1b9`).
+  A mutable schema default (`store:(flex {})`) is no longer one shared
+  value: writing through one instance is invisible to another. The
+  Python-style mutable-default trap is gone. (`BloomFilter` still
+  declares `bits` as a required typed field and passes a fresh Array
+  per `make` — that remains the clearer design.)
+
+- **🔴→✅ `Object` instances format** (same commit, "open objects
+  render"). `print (object {a:1}) end` prints `Object{a:1}`; a bare
+  `make Object {}` on the final stack prints `Object{}` instead of
+  SIGSEGV-ing the interpreter.
+
+- **🟡→✅ `raise` accepts template-string messages** (aql `00cb7a79`,
+  "templates fill typed slots"). Both the bare and parenthesised forms
+  now work, with the code and interpolated message intact:
+
+  ```aql
+  raise bad_input `got ${t}`        # => bad_input, message "got x"
+  ```
+
+  The bind-first idiom (`def msg …` then `raise code msg`) is no longer
+  required; this module keeps it for back-compat and readability.
+
+- **🟢→✅ `getr` raises the documented `not_found`** (aql `93ebcd40`;
+  was `getr_error`, contradicting REFERENCE.md).
+
+- **🟢→✅ `StructUtil.jsonify` emits Floats as JSON numbers** (aql
+  `862546fd`); a `jsonify` → `parse` round trip preserves the Float
+  type now. (`Bloom.encode` continues to use canon — unchanged, just
+  no longer the only type-preserving option.)
+
+Also fixed without having been formally filed: `aql -version` now
+stamps the git commit (`1981f601`), so "which build am I on?" — a
+recurring nuisance across these reports — answers itself.
 
 ---
 
 ## Still open
 
-### 1. 🟡 Forward `set`/`get` regress inside a `Test.test` sub-engine
+### 1. 🟡 `print` forward-arg collection reverses/breaks chained prints
 
-Forward-form `set`/`get` on a `refine Object` now work at the top level
-and through plain typed-param fns, but **do not persist when the same
-code runs inside a `Test.test` body**. Migrating the bit store to the
-cleaner forward form (`bits set k 1`, `bits get k`) passed the spec,
-property, and smoke suites but failed exactly one example in the
-imperative `Test.test` suite — `add` then `contains` returned `false`
-for a just-added key. The library therefore keeps the stack form
-(`bits 1 k set`, `bits k get`), which is reliable in every context.
-
-- **Impact:** the natural forward style is unusable for mutate-through
-  code that must also run under `Test.test`; you need the stack form.
-- **Workaround:** use stack-form `get`/`set` for any object you mutate.
-
-### 2. 🟡 `print` forward-arg collection reverses/breaks chained prints
+Unchanged through three builds:
 
 ```aql
 (1 add 1) print (2 add 2) print     # prints 4 then 2 — the first
-                                    # `print` swallowed (2 add 2)
+                                    # print collects (2 add 2)
 ```
 
-A trailing `print` at end-of-input can also fail to find its argument.
-Write `print (value) end` (or `(value) print end`), one value per
-statement. Unchanged from the previous build.
+The reliable idiom remains one fully-grouped value per statement —
+`print (`label: ${value}`) end` — with which output appears strictly
+in source order. Every print in this module's tests and docs uses it.
 
-### 3. 🟡 `def _ (void-returning-call)` corrupts the next dispatch
+### 2. 🟢 `aql check` is quieter but still not gating-ready
 
-Binding the result of a word whose signature returns nothing (e.g. a
-mutator declared `[…] []`) leaves stack residue that derails the
-following word:
+Improved by `d867f1af` (unknown-type results no longer produce
+strict-`Any` false errors): the spurious `no_signature` reports for
+`getr`, `each`, and user fns are gone — `aql check bloom.aql` dropped
+from ~40 finding lines to 30. Still standing in the way of CI use on
+this module:
 
-```aql
-def Bits (refine Object {})
-def mark fn [ [i:Integer b:Bits] [] [ b 1 (convert String i) set ] ]   # returns []
-def b (make Bits {})
-def _ (mark 5 b)
-"ok" print            # error: no matching signature for print
-```
-
-Give mutators a return value, or call them as bare statements without
-`def`. (This is also why the forward-`set` regression in §1 is easy to
-misdiagnose — a void-bound mutator looks similar.)
-
-### 4. 🟢 `make Object {}` is rejected without a hint
-
-```aql
-def x (make Object {})
-# error: make: expected a constructed object type, got Object
-```
-
-Use a `def T (refine Object {…})` subtype (or a `{…}` map literal). The
-error doesn't suggest the fix.
-
-### 5. 🟢 `indexof` is haystack-first, against the data-last grain
-
-`indexof` moved into the string module in `db828ec`; it still puts the
-haystack at `sig[0]`:
-
-```aql
-import "aql:string-util" end
-(StringUtil.indexof " ABC" "B")   # => 2   (haystack, needle)
-(" ABC" StringUtil.indexof "B")   # => -1  (reads as needle=" ABC")
-```
-
-The natural data-piped form gives the wrong answer; write it
-fully-forward. Worth a one-line note in the string-module reference.
+- two false `no_signature: no matching signature for mul` hits in
+  `derive-m`/`derive-k` (arithmetic flowing through `convert Float`),
+  plus a consequent `fn_body_error` for `derive-k` — the same code
+  runs (and is property-tested) fine;
+- `unused_def` warnings for every word referenced only by the
+  `export "Bloom" {…}` map — the checker doesn't treat the export map
+  as a use site.
 
 ---
 
-## New in `db828ec`
+## Observations on the new build
 
-### N1. 🟡 `import` now requires a terminator
-
-`import` gained an optional second (selective-import) argument, so the
-forward form **without `end`** greedily swallows a following value:
-
-```aql
-import "aql:string-util"
-(StringUtil.indexof " ABC" "B") print end   # undefined word: StringUtil
-```
-
-`import` collected the `(…)` as its second argument, so the namespace
-never bound. Terminate every import — `import "x" end` — which is what
-this module now does throughout. (On `5b983b6` the bare `import "x"` form
-was fine; this is a behavioural change, not just a style preference.) A
-language-level fix that removes the need for the terminator is proposed
-in [`proposals/lazy-arg-resolution.md`](proposals/lazy-arg-resolution.md).
-
-### N2. 🟢 Custom error raising is still absent
-
-There is no word to raise a custom error message; `raise`/`fail`/`throw`
-are all undefined (`do [raise "x"] error […]` only "works" because it
-catches the `undefined_word: raise` error). `error` remains a
-*handler* combinator (`do [risky] error [handler]`). This module still
-signals `merge` precondition failures by dispatching a descriptively
-named undefined word (`bloom-merge-requires-equal-m`) — the only
-catchable, self-describing idiom available.
+- **The DX feedback loop works.** Six issues filed against `958c379b`
+  were fixed within 39 commits, with commit messages that read
+  straight off the report ("guards fire before the next statement",
+  "per-instance mutable class defaults; open objects render"). A
+  parallel report from the `aql:decision` module got the same
+  treatment (`1981f601`), and that module moved out of core
+  (`a7882da9`).
+- **New language surface since `958c379b`** (not yet exercised by this
+  module): lambda arrows (`(x:Integer => body)`, `ec35e87a`/
+  `dfe262d6`), map overloads for `each`/`fold`/`filter` plus `keys`/
+  `vals` and a `KeyVal` entry type (`c6ed6e1a`), a `canon` word for
+  round-trippable source (`c0b727bf`), type-valued params
+  (`ce9914a3`), and a categorised `describe` with guaranteed-complete
+  word docs (`ce133d6c`/`fd82aee9`). The `keys`/`vals` words would
+  have simplified the sparse-map bit store this module used two
+  designs ago; the packed-Array design doesn't need them.
+- **Stability:** all five suites, the AGENTS.md verification script,
+  and both tutorial scripts produce byte-identical results on
+  `958c379b` → `7193a7d3`. Hashing, sizing, encode payloads, and the
+  measured tutorial false-positive rate (97/1000 at p = 0.1) are
+  unchanged.
 
 ---
 
-## Upgrade notes: `5b983b6` → `db828ec`
+## Upgrade notes: `db828ec` → current main
 
-A consumer upgrading across these commits hits several breaking changes
-(all migrated in this module's history):
+Carried forward for anyone jumping from the older pin (all migrated in
+this module's history):
 
 | Change | Before | After |
 |--------|--------|-------|
-| Util module ids gained `-util` | `aql:math`, `aql:array` | `aql:math-util`, `aql:array-util` (and `string-util`, `bin-util`, `time-util`, …) |
-| Module namespaces are PascalCase | `math.log`, `array.where`, `test.test`, `assert.equal` | `MathUtil.log`, `ArrayUtil.where`, `Test.test`, `Assert.equal` |
-| Decimal type renamed | `Decimal` | `Float` (with a `Number` supertype) |
-| `indexof` moved out of core | core `indexof` | `StringUtil.indexof` (`import "aql:string-util" end`) |
-| Bitwise ops moved out of core | core `band`/`bor`/`bxor` | `BinUtil.band`/`.bor`/`.bxor` (`import "aql:bin-util" end`) |
-| `import` terminator | `import "x"` ok | `import "x" end` required (N1) |
-| `base` is now reserved | usable as a local name | rename the local |
-
-`aql:test`, `aql:report`, and `aql:rand` kept their ids; the property
-generator binding is still `r` (`r.int`, `r.string`, …). Core
-arithmetic/comparison/boolean words (`add`, `sub`, `mul`, `div`, `mod`,
-`eq`, `lte`, `gte`, `and`, `not`) and `slice`/`size`/`iota`/`each`/
-`fold`/`all`/`convert`/`get`/`set` remain core.
-
----
-
-## What worked well
-
-- **Static dispatch & types**, the two test surfaces
-  (`Test.test`/`Test.check-prop` and `Test.spec`/`Test.prop`), and the
-  `fold`/`each`/`iota`/`ArrayUtil.where` data-flow words all behaved
-  predictably once the namespace renames were applied.
-- **Error messages** are specific and point at the right span — the
-  import-terminator hint (N1) and the new named test failures are real
-  improvements. The remaining gaps are the *silent* cases (§1, §3).
+| `refine Object` removed | `def T (refine Object {…})` | `def T class {…}` (subclass: `refine <Class> {…}`) |
+| `StringUtil.indexof` argument order | haystack-first (`indexof <haystack> <needle>`) | **haystack-last** (`indexof <needle> <haystack>`); whole string module is subject-last |
+| Integer overflow | silent 64-bit wrap | hard `integer_overflow` error — mask (`BinUtil.band`) before multiplying if you relied on wrap |
+| `set` on a mutable container | returned values varied | Store / Object / Array / class: writes in place, **returns nothing**; FlexMap/FlexList: returns the node; Map: returns a new map |
+| `import` terminator | `import "x" end` required | `end` optional (structure-first); bare `import "x"` is the idiomatic form again |
+| Custom errors | only the undefined-word idiom | `raise` (code, message — template literals fine, payload map form) |
 
 ---
 
 ## Summary
 
-| # | Severity | Issue | Status vs `5b983b6` |
-|---|----------|-------|---------------------|
-| — | — | Forward `set` no-op on `refine Object` | **fixed** (top level) |
-| — | — | `export`-using library can't run directly | **fixed** |
-| — | — | Failing `Test.test` not named | **fixed** |
-| 1 | 🟡 | Forward `set`/`get` regress inside `Test.test` | new caveat |
-| 2 | 🟡 | `print` forward-collection reverses/breaks | unchanged |
-| 3 | 🟡 | `def _ (void-call)` corrupts next dispatch | unchanged |
-| 4 | 🟢 | `make Object {}` rejected without hint | unchanged |
-| 5 | 🟢 | `indexof` haystack-first | unchanged (now in `StringUtil`) |
-| N1 | 🟡 | `import` now requires `end` | new |
-| N2 | 🟢 | No custom error-raising word | unchanged |
+| # | Severity | Issue | Status vs `958c379b` |
+|---|----------|-------|----------------------|
+| — | — | guard `if` + following `def` pre-empted (was §1 🔴) | **fixed** (`00cb7a79`) |
+| — | — | mutable class default shared across instances (was §2 🔴) | **fixed** (`607cd1b9`) |
+| — | — | formatting an `Object` crashes (was §3 🔴) | **fixed** (`607cd1b9`) |
+| — | — | `raise` rejects template messages (was §4 🟡) | **fixed** (`00cb7a79`) |
+| — | — | `getr` code ≠ docs (was §6 🟢) | **fixed** (`93ebcd40`) |
+| — | — | `jsonify` stringifies Floats (was §7 🟢) | **fixed** (`862546fd`) |
+| 1 | 🟡 | `print` forward-collection reverses/breaks | unchanged (3rd report) |
+| 2 | 🟢 | `aql check`: false `mul` no_signature; export-map words flagged unused | improved, still open |

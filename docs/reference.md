@@ -9,15 +9,17 @@ recipes, see the [How-to guides](how-to.md).
 > **AI agents:** [AGENTS.md](../AGENTS.md) condenses the calling
 > convention, idioms, and common mistakes for machine use.
 
-The module exports a single namespace, `Bloom`, plus two types. Import
-it with:
+The module exports a single namespace, `Bloom`, plus the `BloomFilter`
+type. Import it with:
 
 ```aql
-import "./bloom.aql" end
+import "./bloom.aql"
 ```
 
-A consuming script does **not** need to import `aql:math-util` or
-`aql:array-util` itself — `bloom.aql` imports them internally.
+(No `end` is required after `import` on the pinned build; a trailing
+`end` is harmless.) A consuming script does **not** need to import
+`aql:math-util`, `aql:array-util`, `aql:bin-util`, or `aql:struct-util`
+itself — `bloom.aql` imports them internally.
 
 ---
 
@@ -39,26 +41,25 @@ left-to-right order to write.
 
 ### `BloomFilter`
 
-A `refine Object` subtype — the filter instance. Fields:
+A sealed `class` instance — the filter. Fields:
 
 | Field   | Type     | Meaning                                            |
 |---------|----------|----------------------------------------------------|
 | `n`     | Integer  | Target capacity (expected number of distinct items)|
-| `p`     | Float  | Target false-positive probability                  |
+| `p`     | Float    | Target false-positive probability                  |
 | `m`     | Integer  | Derived bit-array width                             |
 | `k`     | Integer  | Derived number of hash functions                   |
 | `added` | Integer  | Count of `add` calls made against this filter      |
-| `bits`  | `Bits`   | Sparse bit storage                                 |
+| `bits`  | Array    | Packed bit storage — 63 bits per integer word      |
 
 Instances are created only through `Bloom.make`. Treat the fields as
-read-only; mutate exclusively through the namespace words.
+read-only; mutate exclusively through the namespace words. (The class
+is sealed and strictly typed, so writing an unknown field or a
+mis-typed value is a loud error.)
 
-### `Bits`
-
-A `refine Object {}` used as a sparse bit set: a set bit at index `i`
-is stored as the field `"<i>": 1`. Indices that were never set are
-absent (and read as `0`). Internal to the module; you should not need
-to touch it directly.
+`bits` is internal: an `Array` of `ceil(m / 63)` integer words, bit
+`i` living at bit `i mod 63` of word `i div 63`. Bit 63 (the sign
+bit) is never used, so every word stays a plain non-negative Integer.
 
 ---
 
@@ -73,16 +74,17 @@ Construct a filter sized for a target capacity and false-positive rate.
 | **Call**    | `{n: Integer, p: Float} Bloom.make end` |
 | **Stack in**| an options Map with keys `n` and `p` |
 | **Returns** | `BloomFilter` |
+| **Errors**  | raises `bad_input` when `n` is not an Integer ≥ 1 or `p` is not a Float in `(0, 0.5]` |
 
 `m` and `k` are derived from `n` and `p` (see
-[Explanation §Sizing](explanation.md#sizing-the-filter)). `p` must be
-in `(0, 1)`; values `> 0.5` round `k` down toward `0` and are not
-useful.
+[Explanation §Sizing](explanation.md#sizing-the-filter)). The bounds
+are enforced: a `p` above `0.5` would round `k` toward `0`, so it is
+rejected rather than accepted uselessly.
 
 ```aql
 def bf ({n: 1000, p: 0.01} Bloom.make end)
-(bf Bloom.params end) print
-# => {"k": 7, "m": 9586, "n": 1000, "p": 0.01}
+print ((bf Bloom.params end)) end
+# => {k:7 m:9586 n:1000 p:0.01}
 ```
 
 ### `Bloom.add`
@@ -118,8 +120,8 @@ approximately rate `p`. There are no false negatives. See
 
 ```aql
 def _ (bf Bloom.add "alice" end)
-(bf Bloom.contains "alice" end) print   # => true
-(bf Bloom.contains "carol" end) print   # => false
+print ((bf Bloom.contains "alice" end)) end   # => true
+print ((bf Bloom.contains "carol" end)) end   # => false
 ```
 
 ### `Bloom.count`
@@ -135,9 +137,8 @@ Estimate the number of distinct items added.
 Uses the Swamidass–Baldi estimator over the set-bit population, with a
 guard that returns the exact `added` count when every bit is set. The
 result is an **approximation** and typically drifts below the true
-insert count as the filter fills (e.g. 100 distinct inserts into a
-`{n:1000, p:0.01}` filter estimates ≈ 90). An empty filter counts `0`.
-Cost is `O(m)`.
+insert count as the filter fills. An empty filter counts `0`. Cost is
+one native popcount per 63-bit word — `O(m/63)`.
 
 ### `Bloom.params`
 
@@ -147,11 +148,11 @@ Return the filter's parameters as a Map.
 |--|--|
 | **Call**    | `bf Bloom.params end` |
 | **Stack in**| `BloomFilter` |
-| **Returns** | `Map` with integer/decimal keys `n`, `p`, `m`, `k` |
+| **Returns** | `Map` with keys `n`, `p`, `m`, `k` |
 
 ```aql
 def ps (bf Bloom.params end)
-(ps "m" get) print   # => 9586
+print ((ps "m" get)) end   # => 9586
 ```
 
 ### `Bloom.merge`
@@ -164,17 +165,17 @@ Union two filters into the first.
 | **Stack in**| target `BloomFilter` `a`, then source `BloomFilter` `b` |
 | **Returns** | `a`, now containing every bit that was set in `a` or `b` |
 | **Effect**  | mutates `a` in place; `b` is unchanged; `a.added` becomes `a.added + b.added` |
-| **Errors**  | raises if `a` and `b` have different `m` or `k` |
+| **Errors**  | raises `incompatible_merge` if `a` and `b` differ on `m` or `k` |
 
 Both filters must have identical `m` and `k`, which happens
 automatically when both were built with the same `(n, p)`. After a
-merge, every item present in `a` or `b` reads as contained.
+merge, every item present in `a` or `b` reads as contained. The union
+itself is one bitwise OR per 63-bit word.
 
-On a precondition violation `merge` raises a catchable error —
-`undefined_word: bloom-merge-requires-equal-m` (or `…-equal-k`). Trap
-it with `do […] error […]` or `Assert.throws`. (The unusual error
-class is a consequence of aql db828ec removing custom error raising;
-see [Explanation §Raising errors](explanation.md#raising-errors-in-aql-db828ec).)
+The error message names the mismatched parameter and both values, e.g.
+`Bloom.merge: filters disagree on m (9586 vs 4793); build both with
+the same (n, p)`. Trap it with `do […] error […]` (read `e get code` /
+`e get message`) or assert it with `Assert.throws`.
 
 ### `Bloom.encode`
 
@@ -190,31 +191,64 @@ The string carries `n`, `p`, `m`, `k`, `added`, and the sorted list of
 set bit indices. Cost is `O(m)`.
 
 ```aql
-(bf Bloom.encode end) print
+print ((bf Bloom.encode end)) end
 # => {added:1 k:7 m:9586 n:1000 p:0.01 set:[223 1110 2827 3714 4601 6318 7205]}
 ```
 
-There is no `decode` word in the public surface today; `encode` is a
-one-way snapshot suitable for logging, inspection, or persistence.
+The snapshot round-trips through `Bloom.decode`. (Exact bit indices
+depend on the module's hash functions, so snapshots are portable
+across processes running the *same* module version, not across
+versions that changed the hashing.)
+
+### `Bloom.decode`
+
+Rebuild a filter from a `Bloom.encode` snapshot.
+
+| | |
+|--|--|
+| **Call**    | `text Bloom.decode end` |
+| **Stack in**| the snapshot `String` |
+| **Returns** | a fresh `BloomFilter` |
+| **Errors**  | raises `bad_payload` when the text is not parseable jsonic or lacks the required fields |
+
+The payload's own `m` and `k` are trusted (not re-derived from `n` and
+`p`), so a snapshot survives changes to the sizing formulas. The
+rebuilt filter is independent of the original — mutating one does not
+affect the other.
+
+```aql
+def snap (bf Bloom.encode end)
+def back (snap Bloom.decode end)
+print ((back Bloom.contains "alice" end)) end   # => true
+```
 
 ---
 
 ## Errors at a glance
 
-| Situation                              | Result |
-|----------------------------------------|--------|
-| `merge` with mismatched `m`            | raises `undefined_word: bloom-merge-requires-equal-m` |
-| `merge` with mismatched `k`            | raises `undefined_word: bloom-merge-requires-equal-k` |
-| missing `end` after a `Bloom.*` call   | dispatch error on the following word (add `end` or parens) |
+All failures raise coded errors; catch with `do […] error […]` and
+read `e get code` / `e get message` (dispatch on several codes with
+`case`).
+
+| Code | Raised by | Situation |
+|------|-----------|-----------|
+| `bad_input` | `make` | `n` not an Integer ≥ 1, or `p` not a Float in `(0, 0.5]` |
+| `incompatible_merge` | `merge` | the filters disagree on `m` or `k` |
+| `bad_payload` | `decode` | text is not parseable jsonic, or is missing/mis-typing `n p m k added set` |
+
+A missing `end` after a `Bloom.*` call is not a module error but a
+general AQL dispatch problem — the word collects the following token
+(add `end` or parens).
 
 ## Complexity
 
-| Word       | Cost   |
-|------------|--------|
-| `make`     | `O(1)` |
-| `add`      | `O(k)` |
-| `contains` | `O(k)` |
-| `count`    | `O(m)` |
-| `params`   | `O(1)` |
-| `merge`    | `O(m)` |
-| `encode`   | `O(m)` |
+| Word       | Cost      |
+|------------|-----------|
+| `make`     | `O(m/63)` (allocates the word Array) |
+| `add`      | `O(k)`    |
+| `contains` | `O(k)`    |
+| `count`    | `O(m/63)` |
+| `params`   | `O(1)`    |
+| `merge`    | `O(m/63)` |
+| `encode`   | `O(m)`    |
+| `decode`   | `O(m/63 + s)` for `s` set bits |

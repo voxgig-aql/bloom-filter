@@ -1,35 +1,36 @@
 {
   "name": "bloom-filter",
-  "version": "0.1.0",
-  "aql_ref": "db828ec",
+  "version": "0.2.0",
+  "aql_ref": "7193a7d3",
   "description": "Bloom filter for AQL: a probabilistic set (membership) with no false negatives and a tunable false-positive rate, exposed as the single `Bloom` namespace.",
   "conventions": {
-    "import": "import \"./bloom.aql\" end  — the library imports its own aql:* deps; callers need not",
+    "import": "import \"./bloom.aql\"  — no `end` needed on the pinned build (structure-first engine); the library imports its own aql:* deps, callers need not",
     "call": "receiver-first, verb in the middle, terminated with `end` (or wrapped in parens): `receiver Bloom.verb arg... end`. Without a terminator the verb swallows the following token, giving a wrong result or a dispatch error.",
     "construct": "build filters ONLY via Bloom.make; treat BloomFilter fields as read-only and mutate through the namespace words",
     "mutation": "add and merge MUTATE the receiver in place and return the SAME object — there is no immutable copy",
     "probabilistic": "contains => false is certain (the item was definitely never added); contains => true is probabilistic (false-positive rate ~ p)",
     "count_vs_added": "count is a cardinality ESTIMATE, not a tally; the exact insert count is `added` (read via encode or bf.added)",
     "import_resolution": "relative to the working directory the script is run from, not the importing file",
-    "external_deps": ["aql:math-util", "aql:array-util", "aql:string-util", "aql:bin-util"],
-    "no_string_decode": "encode is one-way; there is no decode"
+    "external_deps": ["aql:math-util", "aql:array-util", "aql:bin-util", "aql:struct-util"],
+    "errors": "failures raise coded errors caught with `do [...] error [...]`; read e.code / e.message. Codes: bad_input (Bloom.make args missing or out of range), incompatible_merge (Bloom.merge filters disagree on m or k), bad_payload (Bloom.decode text is not an encode snapshot)",
+    "serialization": "encode produces a jsonic snapshot; decode rebuilds an equivalent filter from it (round-trips n, p, m, k, added, and every set bit). Snapshots are portable across processes on the same module version, not across versions that change the hashing."
   },
   "modules": {
     "bloom.aql": { "kind": "bloom filter", "namespaces": ["Bloom"] }
   },
   "types": {
-    "BloomFilter": { "kind": "refine Object", "fields": ["n", "p", "m", "k", "added", "bits"], "note": "construct only via Bloom.make; fields are read-only" },
-    "Bits": { "kind": "refine Object", "note": "nested bit storage; fields are stringified set-bit indices" }
+    "BloomFilter": { "kind": "class", "fields": ["n", "p", "m", "k", "added", "bits"], "note": "sealed class; construct only via Bloom.make; fields are read-only. `bits` is an Array of 63-bit integer words." }
   },
   "word_specs": {
     "bloom": {
-      "make":     { "call": "{n:Integer, p:Float} Bloom.make end", "args": ["params:Map{n:Integer,p:Float}"],     "returns": "BloomFilter", "note": "n = expected distinct items; p = target false-positive rate in (0, 0.5]. Derives m (bit count) and k (hash count)." },
+      "make":     { "call": "{n:Integer, p:Float} Bloom.make end", "args": ["params:Map{n:Integer,p:Float}"],     "returns": "BloomFilter", "note": "n = expected distinct items; p = target false-positive rate in (0, 0.5]. Derives m (bit count) and k (hash count). Raises bad_input on a non-integer/non-positive n or a p outside (0, 0.5]." },
       "add":      { "call": "bf Bloom.add item end",               "args": ["bf:BloomFilter", "item:Any"],          "returns": "BloomFilter", "note": "MUTATES bf and returns the SAME object. Any value; stringified internally. Sets k bits, increments added." },
       "contains": { "call": "bf Bloom.contains item end",          "args": ["bf:BloomFilter", "item:Any"],          "returns": "Boolean", "note": "false = definitely never added; true = probably added (false-positive rate ~ p)." },
-      "count":    { "call": "bf Bloom.count end",                  "args": ["bf:BloomFilter"],                      "returns": "Integer", "note": "ESTIMATE of distinct items, not a tally. Empty filter => 0. O(m)." },
+      "count":    { "call": "bf Bloom.count end",                  "args": ["bf:BloomFilter"],                      "returns": "Integer", "note": "ESTIMATE of distinct items, not a tally. Empty filter => 0. O(m/63)." },
       "params":   { "call": "bf Bloom.params end",                 "args": ["bf:BloomFilter"],                      "returns": "Map", "note": "{n, p, m, k}." },
-      "merge":    { "call": "a Bloom.merge b end",                 "args": ["a:BloomFilter", "b:BloomFilter"],      "returns": "BloomFilter", "note": "Union of a and b into a. MUTATES a and returns it. Requires identical m and k (same (n, p)); else raises. O(m)." },
-      "encode":   { "call": "bf Bloom.encode end",                 "args": ["bf:BloomFilter"],                      "returns": "String", "note": "One-way jsonic snapshot (params + set-bit indices). No decode." }
+      "merge":    { "call": "a Bloom.merge b end",                 "args": ["a:BloomFilter", "b:BloomFilter"],      "returns": "BloomFilter", "note": "Union of a and b into a. MUTATES a and returns it. Requires identical m and k (same (n, p)); else raises incompatible_merge. O(m/63)." },
+      "encode":   { "call": "bf Bloom.encode end",                 "args": ["bf:BloomFilter"],                      "returns": "String", "note": "jsonic snapshot (params + set-bit indices). Round-trips through Bloom.decode. O(m)." },
+      "decode":   { "call": "text Bloom.decode end",               "args": ["text:String"],                         "returns": "BloomFilter", "note": "Rebuild a filter from a Bloom.encode snapshot; independent of the original. Raises bad_payload on unparseable or incomplete text." }
     }
   },
   "namespaces": {
