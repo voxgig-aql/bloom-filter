@@ -41,22 +41,29 @@ import "./bloom.aql" end
 ] "add-then-contains" Test.test end
 
 
+# --- bulk-insert fixtures ------------------------------------------
+#
+# `_seen` is populated here at top level, then read only inside the
+# Test.test bodies below. It lives out here, not inside a block, for two
+# reasons:
+#   * `aql check` treats a code body (the `[...]` handed to each / fold /
+#     Test.test) as opaque, so it can't see the in-body uses; the leading
+#     underscore marks the def as body-only and skips check's unused_def
+#     false positive.
+#   * the bytecode compiler (`aql --compile`) drops a *block-local*
+#     binding referenced from an `each` body but keeps a top-level one, so
+#     building the fixture here keeps the interpreter and the compiler in
+#     agreement. See test/divergence/.
+
+def _seen ({n: 1000, p: 0.01} Bloom.make end)
+def _fill (iota 50 each [ var [[i] _seen Bloom.add (convert String i) end 0 ] ])
+
+
 # --- bulk-insert: every item is found ------------------------------
 
 [
-  def bf ({n: 1000, p: 0.01} Bloom.make end)
-  def _ (iota 50 each [
-    var [[i]
-      def key (convert String i)
-      bf Bloom.add key end
-      0
-    ]
-  ])
   def hits (iota 50 each [
-    var [[i]
-      def key (convert String i)
-      if (bf Bloom.contains key end) [1] [0]
-    ]
+    var [[i] if (_seen Bloom.contains (convert String i) end) [1] [0] ]
   ])
   50 (0 hits [add end] fold) Assert.equal end
 ] "bulk-add-all-found" Test.test end
@@ -65,15 +72,7 @@ import "./bloom.aql" end
 # --- count tracks the insertion count ------------------------------
 
 [
-  def bf ({n: 1000, p: 0.01} Bloom.make end)
-  def _ (iota 50 each [
-    var [[i]
-      def key (convert String i)
-      bf Bloom.add key end
-      0
-    ]
-  ])
-  def cnt (bf Bloom.count end)
+  def cnt (_seen Bloom.count end)
   true (45 lte cnt) Assert.equal end
   true (cnt lte 55) Assert.equal end
 ] "count-within-tolerance" Test.test end

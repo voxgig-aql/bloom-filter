@@ -22,6 +22,11 @@ mistakes to avoid. Every example there is verified against the pinned
   `_spec` = declarative spec; `unit` = example-based, `prop` = property-based.
   Each assertion-bearing suite ends by asserting `Test.fail-count` is `0` and
   prints `all green`.
+- `test/divergence/run.sh` runs every suite through all three aql surfaces —
+  interpreter, `aql check`, and the byte compiler (`aql --compile`) — and
+  asserts none errors or disagrees. It builds a newer aql than this module's
+  pin, since the `--compile` CLI postdates it. See its `README.md`; the
+  byte-compiler bug it guards against is `dx-report.md` §3.
 - Known AQL-runtime gotchas observed with the pinned build are in
   `dx-report.md`. The pinned aql commit is single-sourced in `.github/workflows/test.yml`
   (`AQL_REF`); a CI job fails if the hook or `api.json` drift from it.

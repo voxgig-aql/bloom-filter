@@ -260,3 +260,20 @@ explicitly, which is why it carries the expensive O(m) properties
 Each test file ends by asserting `Test.fail-count` is `0`, so a failure
 makes `aql` exit non-zero — which is exactly what the
 [CI workflow](../.github/workflows/test.yml) checks on every push and pull request.
+
+One more check sits outside this set. `test/divergence/` runs every suite
+through all three of aql's execution surfaces — the interpreter, `aql
+check` (static type-check), and the byte compiler (`aql --compile`) — and
+asserts none errors or disagrees. Run it with:
+
+```bash
+test/divergence/run.sh
+```
+
+It builds a newer aql (the `--compile` CLI postdates this module's pin) and
+prints a per-suite interpreter/check/bytecode matrix. All five suites are
+green on all three. See [`test/divergence/README.md`](../test/divergence/README.md)
+for the one upstream byte-compiler bug this guards against (a compiled
+`each` body drops a *block-local* binding) and the one-line structural
+choice — building a bulk fixture at top level — that keeps the suites clear
+of it.
