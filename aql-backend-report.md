@@ -8,8 +8,10 @@ byte compiler (`aql --compile`)?
 
 **Verdict: No.** The latest `main` tip has **regressed**. The last build on
 which interpreting, checking, and compiling *all* pass cleanly is
-`c44d994` (2026-06-20). Two upstream regressions landed in the 109 commits
-after it.
+`c44d994` (2026-06-20). Two upstream regressions landed in the commits
+after it and **persist on the current tip `65410b1`** (2026-06-23), which
+reproduces the exact same two failures as the first regressed build seen,
+`f8ee642`.
 
 ---
 
@@ -19,9 +21,12 @@ after it.
 |-------|------|------|-------|
 | `7193a7d3` | 2026-06-11 | the library's pinned ref | no `--compile` CLI; `aql check` carries the §2 `no_signature` false positives |
 | `c44d994`  | 2026-06-20 | the `test/divergence/` harness pin | **all three surfaces clean** |
-| `f8ee642`  | 2026-06-23 | latest `main` tip | **regressed** (this report) |
+| `f8ee642`  | 2026-06-23 | first regressed `main` tip checked | **regressed** |
+| `65410b1`  | 2026-06-23 | latest `main` tip (HEAD) | **regressed** — same two failures as `f8ee642` |
 
-All three built from source with `GOFLAGS=-mod=mod`.
+All built from source with `GOFLAGS=-mod=mod`. `aql-lang/aql` git access is
+blocked by egress policy in this environment; `65410b1` was fetched as a
+source tarball from `codeload.github.com` and built locally.
 
 ---
 
@@ -40,7 +45,7 @@ error count; `compile` = whether `aql --compile X` output matches `aql X`.
 | `bloom_prop_spec.aql`  | ok | 0 err | ok |
 | `bloom_smoke_test.aql` | ok | 0 err | ok |
 
-### `f8ee642` — latest `main` (regressed)
+### `f8ee642` / `65410b1` — `main` (regressed; identical results)
 
 | Suite | interp | check | compile |
 |-------|:------:|:-----:|:-------:|
@@ -49,6 +54,9 @@ error count; `compile` = whether `aql --compile X` output matches `aql X`.
 | `bloom_prop_test.aql`  | ok | 0 err | ok |
 | `bloom_prop_spec.aql`  | ok | 0 err | ok |
 | `bloom_smoke_test.aql` | ok | **12 err** | ok |
+
+Both regressed `main` builds produce this exact matrix; the current tip
+`65410b1` reproduces the same two root causes (verified below).
 
 \* `--compile` still matches the interpreter on every suite (no *new*
 bytecode divergence — the each-body scope fix from the prior round still
@@ -129,7 +137,8 @@ Lines `145`/`155` are `bloom.aql`'s `derive-m` / `derive-k` (the `mul`
 inside the sizing formulas, flowing through `convert Float`); the `240`–
 `263` hits are the smoke test's cardinality-estimate math. These are the
 **same** false positives recorded in `dx-report.md` §2 — present at
-`7193a7d3`, **fixed by `c44d994`**, and now **regressed** on `f8ee642`.
+`7193a7d3`, **fixed by `c44d994`**, and **regressed** on `f8ee642` and
+still failing on the current tip `65410b1`.
 The flagged code is example- and property-tested and runs correctly under
 the interpreter and the byte compiler; only the static checker is wrong.
 
@@ -155,9 +164,9 @@ suites; `bloom.aql` plus the in-file math for the smoke suite).
 
 ## Recommendation
 
-1. **Do not adopt `f8ee642`** for this library yet, and do not move the
-   `test/divergence/` pin off `c44d994` — doing so would turn the suites
-   and the harness red for purely upstream reasons.
+1. **Do not adopt the current `main` (`65410b1`)** for this library, and do
+   not move the `test/divergence/` pin off `c44d994` — doing so would turn
+   the suites and the harness red for purely upstream reasons.
 2. **Stay on `c44d994`** as the bytecode-capable reference: it is the most
    recent build where interpreter, `aql check`, and `aql --compile` are all
    clean across every suite.
@@ -168,17 +177,24 @@ suites; `bloom.aql` plus the in-file math for the smoke suite).
    - `no_signature` false positives on `mul`/`fold`/`sub`/`div`/`convert`/
      `negate` through `convert Float` (check mode; regression of a fix that
      shipped in `c44d994`).
-4. When a `main` past `f8ee642` clears both, re-run `test/divergence/run.sh`
+4. When a `main` past `65410b1` clears both, re-run `test/divergence/run.sh`
    against it and bump the pin.
 
 ---
 
 ### Reproduction
 
+`aql-lang/aql` git is blocked by egress policy here, but the
+`codeload.github.com` archive host is reachable, so fetch a source tarball
+and build it:
+
 ```bash
-# build any ref
-git clone https://github.com/aql-lang/aql /tmp/aql && cd /tmp/aql
-git checkout f8ee642 && ( cd cmd/go && GOFLAGS=-mod=mod go build -o /tmp/aql-bin ./aql )
+# build any ref (REF = a commit sha or branch, e.g. 65410b1)
+REF=65410b18565ea64ba4fc2a55a73eeb04fa90401f
+mkdir -p /tmp/aql && curl -fsSL \
+  "https://codeload.github.com/aql-lang/aql/tar.gz/$REF" \
+  | tar -xz -C /tmp/aql --strip-components=1
+( cd /tmp/aql/cmd/go && GOFLAGS=-mod=mod go build -o /tmp/aql-bin ./aql )
 
 # from the bloom-filter repo root
 /tmp/aql-bin test/bloom_unit_test.aql          # interpreter
