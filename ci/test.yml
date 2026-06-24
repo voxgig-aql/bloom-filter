@@ -21,7 +21,7 @@ env:
   # aql-lang/aql @ main, 2026-06-24 (PR #182, claude/aql-client-issues-6b8new).
   # Pinned to the exact commit this module is verified against — the build
   # where all five suites interpret, check (0 errors), and compile clean.
-  AQL_REF: 14036b4125a9ccbd9655503a1a4171c008d93d06
+  AQL_REF: 407fedad2ea2b30c3dde2f29cfbe60e55f94db4e
 
 jobs:
   test:

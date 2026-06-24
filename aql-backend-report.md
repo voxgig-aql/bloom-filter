@@ -6,18 +6,23 @@
 across all three execution surfaces — the interpreter, `aql check`, and the
 byte compiler (`aql --compile`)?
 
-**Verdict: Yes, as of `14036b4` (2026-06-24).** Two regressions seen on the
-`f8ee642`/`65410b1` tips (2026-06-23) were **fixed upstream the next day**
-(PR #182, `claude/aql-client-issues-6b8new`; the fix commit is `f247557`,
-with `fc47452` and `1b7b9ae` alongside). On `14036b4` all five suites
-interpret, check (0 errors), and compile cleanly. The harness pin moves
-from `c44d994` to `14036b4`. The regression details below are kept as the
-record of what was wrong and why.
+**Verdict: Yes, as of `14036b4` (2026-06-24), and re-verified on the current
+pin `407feda`.** Two regressions seen on the `f8ee642`/`65410b1` tips
+(2026-06-23) were **fixed upstream the next day** (PR #182,
+`claude/aql-client-issues-6b8new`; the fix commit is `f247557`, with
+`fc47452` and `1b7b9ae` alongside). On `14036b4` all five suites interpret,
+check (0 errors), and compile cleanly. The pin has since moved to `407feda`
+(the current `main` HEAD = the doc-verified `0b010ae` plus the
+re-verification doc, no engine delta; several checker commits past
+`14036b4`), re-verified clean here and in upstream's
+`design/CLIENT-VERIFICATION-MAIN-2026-06-24.md`. The regression details
+below are kept as the record of what was wrong and why.
 
 > Timeline: the two regressions were *transient* on `main` — present
 > 2026-06-23, gone 2026-06-24. Upstream's own
-> `design/CLIENT-FIXES-2026-06-24.md` drove the fixes directly off this
-> report.
+> `design/CLIENT-FIXES-2026-06-24.md` (and the follow-up
+> `CLIENT-VERIFICATION-MAIN-2026-06-24.md`) drove the fixes directly off
+> this report.
 
 ---
 
@@ -25,11 +30,12 @@ record of what was wrong and why.
 
 | Build | Date | Role | Notes |
 |-------|------|------|-------|
-| `7193a7d3` | 2026-06-11 | the library's pinned ref | no `--compile` CLI; `aql check` carries the §2 `no_signature` false positives |
+| `7193a7d3` | 2026-06-11 | former library pin | no `--compile` CLI; `aql check` carries the §2 `no_signature` false positives |
 | `c44d994`  | 2026-06-20 | former `test/divergence/` harness pin | all three surfaces clean (no `convert`/`None` regression yet) |
 | `f8ee642`  | 2026-06-23 | first regressed `main` tip checked | **regressed** |
 | `65410b1`  | 2026-06-23 | regressed `main` tip | **regressed** — same two failures as `f8ee642` |
-| `14036b4`  | 2026-06-24 | **current `main` tip & new harness pin** | **all three surfaces clean — regressions fixed** |
+| `14036b4`  | 2026-06-24 | the build that fixed the regressions | all three surfaces clean — regressions fixed |
+| `407feda`  | 2026-06-24 | **current `main` HEAD, library & harness pin** | **all three surfaces clean — re-verified** |
 
 All built from source with `GOFLAGS=-mod=mod`. `aql-lang/aql` git access is
 blocked by egress policy in this environment; the `*main*` tips were fetched
@@ -194,15 +200,17 @@ suites; `bloom.aql` plus the in-file math for the smoke suite).
 
 ## Recommendation (updated 2026-06-24)
 
-1. **Adopt `14036b4`.** Both regressions are fixed; all five suites
+1. **Adopt `407feda`** (current `main` HEAD; `14036b4`-lineage plus further
+   checker work, re-verified). Both regressions are fixed; all five suites
    interpret, check (0 errors), and compile clean.
-2. **`test/divergence/run.sh` is pinned to `14036b4`** (was `c44d994`), and
-   its build now fetches a source tarball from `codeload.github.com` so it
-   works even where raw `git clone` of `aql-lang/aql` is blocked.
+2. **`test/divergence/run.sh` is pinned to `407feda`** (was `c44d994` →
+   `14036b4`), and its build fetches a source tarball from
+   `codeload.github.com` so it works even where raw `git clone` of
+   `aql-lang/aql` is blocked.
 3. **No library changes were required.** The two regressions were upstream;
    the each-body block-local scope bug the unit suite's top-level `_seen`
-   fixture works around is *also* fixed on `14036b4`, but the structure is
-   kept (harmless, and keeps the suite robust across aql versions).
+   fixture works around is *also* fixed, but the structure is kept
+   (harmless, and keeps the suite robust across aql versions).
 4. The two regressions are already **filed and fixed upstream** — see
    `aql-lang/aql` `design/CLIENT-FIXES-2026-06-24.md`, which was written
    directly off this report. No issues left to file.
@@ -217,7 +225,7 @@ and build it:
 
 ```bash
 # build any ref (REF = a commit sha or branch, e.g. the current pin)
-REF=14036b4125a9ccbd9655503a1a4171c008d93d06
+REF=407fedad2ea2b30c3dde2f29cfbe60e55f94db4e
 mkdir -p /tmp/aql && curl -fsSL \
   "https://codeload.github.com/aql-lang/aql/tar.gz/$REF" \
   | tar -xz -C /tmp/aql --strip-components=1

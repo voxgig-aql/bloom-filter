@@ -15,7 +15,7 @@
 #
 # A check error, a non-zero interpreter run, or any difference between
 # `aql --compile X` and `aql X` fails the script. This harness builds its OWN
-# aql at the ref below (it equals the library's pin since the bump to 14036b4,
+# aql at the ref below (it equals the library's pin since the bump to 407feda,
 # but pinning it here keeps the harness self-contained — it never depends on
 # whatever aql is on PATH). Cached under ~/.cache/aql-divergence; needs `go` +
 # network for the one-time build, fetched as a source tarball from
@@ -30,7 +30,7 @@ set -uo pipefail
 # fold-carrier `no_signature` check false positives (f247557 / fc47452) — plus
 # OpInterp (1b7b9ae) and gradual-Any. All five suites interpret, check (0
 # errors), and compile clean. Bump in lockstep with the workflow AQL_REF.
-AQL_BYTECODE_REF=14036b4125a9ccbd9655503a1a4171c008d93d06
+AQL_BYTECODE_REF=407fedad2ea2b30c3dde2f29cfbe60e55f94db4e
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"

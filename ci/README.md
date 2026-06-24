@@ -14,7 +14,7 @@ workflow changes are staged here and a maintainer promotes them.
 
 ### What changed vs the live `.github/workflows/test.yml`
 
-1. **`AQL_REF` bumped to `14036b4…`** — the commit this library is now
+1. **`AQL_REF` bumped to `407feda…`** — the commit this library is now
    verified against (interpreter, `aql check`, and `aql --compile` all clean
    across every suite). The live file still pins `db828ec…`, which also
    resolves the long-standing pin drift between it and the hook / `api.json`.
@@ -32,7 +32,7 @@ PAT that has `workflow`, or the GitHub web UI):
 
 ```bash
 git mv ci/test.yml .github/workflows/test.yml
-git commit -m "ci: adopt aql 14036b4; add gating divergence job"
+git commit -m "ci: adopt aql 407feda; add gating divergence job"
 git push
 ```
 
