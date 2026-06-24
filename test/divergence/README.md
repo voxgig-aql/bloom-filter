@@ -23,7 +23,7 @@ failures.
 test/divergence/run.sh
 ```
 
-`run.sh` builds its own aql at a ref pinned in the script (the same `14036b4`
+`run.sh` builds its own aql at a ref pinned in the script (the same `407feda`
 the library now pins; pinning it here keeps the harness self-contained, so it
 never depends on whatever aql is on `PATH`), then prints a per-suite matrix:
 
@@ -69,7 +69,7 @@ its bulk fixture (`_seen`) at **top level** instead of inside the `Test.test`
 block, which both keeps it in scope for the compiler and (the underscore)
 skips `aql check`'s unused_def false positive for body-only defs.
 
-**Status (aql `14036b4`, the current pin): fixed upstream.** The reduced
+**Status (aql `407feda`, the current pin): fixed upstream.** The reduced
 repro above is now byte-identical between interpreter and `--compile`, and
 all five suites are clean across all three surfaces. The `_seen` fixture is
 kept anyway — it's harmless and keeps the suite robust on older builds. This
