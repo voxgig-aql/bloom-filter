@@ -23,10 +23,9 @@ failures.
 test/divergence/run.sh
 ```
 
-`run.sh` builds an aql that has the bytecode + modern check passes (pinned in
-the script — the `--compile` CLI did **not** exist at the library's verified
-pin `7193a7d3`, so this deliberately builds a *newer* aql, independent of the
-library's own pin), then prints a per-suite matrix:
+`run.sh` builds its own aql at a ref pinned in the script (the same `14036b4`
+the library now pins; pinning it here keeps the harness self-contained, so it
+never depends on whatever aql is on `PATH`), then prints a per-suite matrix:
 
 ```
   SUITE                         INTERPRETER   CHECK           BYTECODE
@@ -41,14 +40,15 @@ It exits non-zero on any interpreter failure, any check **error**, or any
 difference between `aql --compile X` and `aql X`. Needs `go` + network for the
 one-time build (cached in `~/.cache/aql-divergence`).
 
-## Background: the byte-compiler divergence this guards against
+## Background: what this guards against (and the bug it caught)
 
 `aql --compile` is documented to return results identical to the interpreter
-(it falls back to the interpreter for anything it can't lower). One upstream
-bug breaks that promise, and the suites are written to stay clear of it.
+(it falls back to the interpreter for anything it can't lower). This harness
+exists because that promise has been broken before, and broke again twice on
+`main` (the regressions in `../../aql-backend-report.md`).
 
-A compiled `each` body **drops a block-local binding** from the enclosing
-block. Reduced repro (passes on the interpreter, wrong under `--compile`):
+The original divergence this guard caught: a compiled `each` body **dropped a
+block-local binding** from the enclosing block —
 
 ```aql
 import "aql:test" end
@@ -59,28 +59,28 @@ import "./bloom.aql" end
   true (45 lte cnt) Assert.equal end
 ] "count" Test.test end
 # interpreter => passes
-# --compile   => each: element 0: [aql/undefined_word]: undefined word: bf
+# --compile (on the old pin) => each: element 0: undefined word: bf
 ```
 
-Inside the `each` the compiled path can't see the block-local `bf`, so
-`bf Bloom.add …` raises `undefined word: bf`. The emitter believes it can
-lower the body, so `--compile` (TRY) does **not** fall back, and the wrong
-result escapes — breaking the "identical, never semantics" contract. The
-trigger is narrow: a *block-local* `def` referenced from an `each` body. A
-**top-level** binding survives; a single-expression top-level loop is instead
-*refused* (`each` Stage 2/3) and falls back cleanly.
+— so `bf Bloom.add …` raised `undefined word: bf` and, because the emitter
+believed it could lower the body, `--compile` did **not** fall back and the
+wrong result escaped. `test/bloom_unit_test.aql` was restructured to build
+its bulk fixture (`_seen`) at **top level** instead of inside the `Test.test`
+block, which both keeps it in scope for the compiler and (the underscore)
+skips `aql check`'s unused_def false positive for body-only defs.
 
-So `test/bloom_unit_test.aql` builds its bulk fixture (`_seen`) at **top
-level** instead of inside the `Test.test` block — which both keeps it in
-scope for the compiler and (the underscore) skips `aql check`'s unused_def
-false positive for body-only defs. With that one structural choice every
-suite is green under all three surfaces. This is an upstream aql bug, not a
-bloom defect; it is recorded in `../../dx-report.md` §3, and this harness is
-the regression guard.
+**Status (aql `14036b4`, the current pin): fixed upstream.** The reduced
+repro above is now byte-identical between interpreter and `--compile`, and
+all five suites are clean across all three surfaces. The `_seen` fixture is
+kept anyway — it's harmless and keeps the suite robust on older builds. This
+harness stays as the regression guard (it has already caught two transient
+`main` regressions; see `../../aql-backend-report.md`).
 
-Tested against aql `c44d994`. `--force-compile` still refuses `each`/`get`
-(emitter coverage, Stage 2/3) — expected, and harmless because `--compile`
-falls back.
+`--force-compile` now fully compiles `bloom_prop_test.aql`; the rest refuse
+on code-body words (`each` / `do` / `test-test`, "Stage 2") and fall back
+cleanly under `--compile` — sound by `aql-lang/aql`'s
+`design/COMPILABLE-SUBSET.md` ("refusal is always sound; the worst failure
+mode is slow, not wrong").
 
 ### Wiring it into CI
 

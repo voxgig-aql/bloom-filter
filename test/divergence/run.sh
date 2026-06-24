@@ -14,16 +14,23 @@
 # coverage gaps; under --compile they fall back, so they are not failures).
 #
 # A check error, a non-zero interpreter run, or any difference between
-# `aql --compile X` and `aql X` fails the script. The --compile/--force-compile
-# CLI did not exist at the library's verified pin (7193a7d3), so this harness
-# builds a NEWER aql on purpose, pinned below and cached under
-# ~/.cache/aql-divergence. Needs `go` + network for the one-time build.
+# `aql --compile X` and `aql X` fails the script. This harness builds its OWN
+# aql at the ref below (it equals the library's pin since the bump to 14036b4,
+# but pinning it here keeps the harness self-contained — it never depends on
+# whatever aql is on PATH). Cached under ~/.cache/aql-divergence; needs `go` +
+# network for the one-time build, fetched as a source tarball from
+# codeload.github.com so it works even where raw `git clone` of aql-lang/aql
+# is blocked.
 set -uo pipefail
 
-# aql-lang/aql @ main, 2026-06-20: --force-compile plus the bytecode-compiler
-# bug fixes (PRs #160/#161), and the check-mode fixes that clear this library's
-# old false positives. Bump to re-check against a newer backend.
-AQL_BYTECODE_REF=c44d994f33c5cc39b2a1cc4d2f170b3b0aa07431
+# aql-lang/aql @ main, 2026-06-24 (PR #182, claude/aql-client-issues-6b8new) —
+# the same commit the library now pins. It fixes the two regressions this
+# library's aql-backend-report.md flagged — the None/type-literal
+# template-interpolation break (f247557) and the `convert` return-type /
+# fold-carrier `no_signature` check false positives (f247557 / fc47452) — plus
+# OpInterp (1b7b9ae) and gradual-Any. All five suites interpret, check (0
+# errors), and compile clean. Bump in lockstep with the workflow AQL_REF.
+AQL_BYTECODE_REF=14036b4125a9ccbd9655503a1a4171c008d93d06
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
@@ -45,8 +52,8 @@ if [ ! -x "$AQL" ]; then
   command -v go >/dev/null 2>&1 || { echo "error: Go toolchain not found." >&2; exit 1; }
   log "building aql @ $AQL_BYTECODE_REF (one-time; cached) …"
   src="$(mktemp -d)"
-  git clone --quiet https://github.com/aql-lang/aql "$src" || { echo "error: clone failed." >&2; exit 1; }
-  git -C "$src" checkout --quiet "$AQL_BYTECODE_REF" || { echo "error: checkout failed." >&2; exit 1; }
+  curl -fsSL "https://codeload.github.com/aql-lang/aql/tar.gz/$AQL_BYTECODE_REF" \
+    | tar -xz -C "$src" --strip-components=1 || { echo "error: fetch/extract failed." >&2; exit 1; }
   mkdir -p "$CACHE"
   ( cd "$src/cmd/go" && GOFLAGS=-mod=mod go build \
       -ldflags "-X github.com/aql-lang/aql/cmd/go.Version=$AQL_BYTECODE_REF" \
