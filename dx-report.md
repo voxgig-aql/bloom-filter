@@ -111,7 +111,19 @@ this module:
   `export "Bloom" {…}` map — the checker doesn't treat the export map
   as a use site.
 
-### 3. 🟡 Bytecode (`--compile`) backend diverges from the interpreter on an `each` body that references an outer `def`
+### 3. ✅ Bytecode (`--compile`) each-body block-local divergence — fixed upstream (`14036b4`)
+
+> **Resolved 2026-06-24.** The divergence below is **fixed** on aql
+> `14036b4` (the reduced repro is byte-identical between interpreter and
+> `--compile`), along with two short-lived `main` regressions that broke
+> the library on the 2026-06-23 tips — a `None`-in-template interpolation
+> bug and `convert`/fold `no_signature` check false positives (all in
+> `f247557` / `fc47452`; see `aql-backend-report.md` and upstream
+> `design/CLIENT-FIXES-2026-06-24.md`). `test/divergence/run.sh` now pins
+> `14036b4` and every suite is clean across interpreter, `aql check` (0
+> errors), and `aql --compile`. The original finding is kept below as the
+> record; the unit suite's top-level `_seen` fixture is retained (harmless,
+> and keeps the suite robust on older builds).
 
 Newer aql can run a program through a bytecode backend instead of the
 interpreter, selectable at the CLI: `aql --compile X` (bytecode when
@@ -216,4 +228,4 @@ this module's history):
 | — | — | `jsonify` stringifies Floats (was §7 🟢) | **fixed** (`862546fd`) |
 | 1 | 🟡 | `print` forward-collection reverses/breaks | unchanged (3rd report) |
 | 2 | 🟢 | `aql check`: false `mul` no_signature; export-map words flagged unused | improved, still open |
-| 3 | 🟡 | bytecode `--compile` drops a block-local `def` referenced from an `each` body (worked around: top-level fixture) | new (3-mode check, `test/divergence/`; aql `c44d994`) |
+| 3 | ✅ | bytecode `--compile` block-local `each`-body divergence (+ two 2026-06-23 `main` regressions) | **fixed** upstream `f247557`/`fc47452`; harness pin moved to aql `14036b4` |
