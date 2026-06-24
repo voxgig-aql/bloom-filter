@@ -23,10 +23,9 @@ failures.
 test/divergence/run.sh
 ```
 
-`run.sh` builds an aql that has the bytecode + modern check passes (pinned in
-the script — the `--compile` CLI did **not** exist at the library's verified
-pin `7193a7d3`, so this deliberately builds a *newer* aql, independent of the
-library's own pin), then prints a per-suite matrix:
+`run.sh` builds its own aql at a ref pinned in the script (the same `14036b4`
+the library now pins; pinning it here keeps the harness self-contained, so it
+never depends on whatever aql is on `PATH`), then prints a per-suite matrix:
 
 ```
   SUITE                         INTERPRETER   CHECK           BYTECODE

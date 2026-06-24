@@ -3,7 +3,7 @@
 **Status:** ✅ Landed upstream. aql pulled this proposal in as
 `5fcaf1a0` and implemented it as "engine: structure-first, lazy
 forward-argument resolution" (`66876387`); the behaviour ships in
-`aql @ 958c379b` and later (this module pins `7193a7d3`). The headline fix —
+`aql @ 958c379b` and later (this module pins `14036b4`). The headline fix —
 `import "mod"` no longer needs a terminator — is verified in
 [`dx-report.md`](../dx-report.md). One residual case in the same
 family (an else-less guard `if` eagerly collecting a following `def`

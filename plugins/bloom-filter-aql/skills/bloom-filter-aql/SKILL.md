@@ -7,7 +7,7 @@ description: Use when writing or editing AQL code that calls the Bloom bloom-fil
 
 A probabilistic set: "have I seen this item?" in little memory, with **no
 false negatives** and a tunable false-positive rate. Public surface = the
-`Bloom` namespace. Everything below is verified against `aql @ 7193a7d3`.
+`Bloom` namespace. Everything below is verified against `aql @ 14036b4`.
 
 ## Import
 

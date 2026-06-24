@@ -14,21 +14,22 @@
 # coverage gaps; under --compile they fall back, so they are not failures).
 #
 # A check error, a non-zero interpreter run, or any difference between
-# `aql --compile X` and `aql X` fails the script. The --compile/--force-compile
-# CLI did not exist at the library's verified pin (7193a7d3), so this harness
-# builds a NEWER aql on purpose, pinned below and cached under
-# ~/.cache/aql-divergence. Needs `go` + network for the one-time build (fetched
-# as a source tarball from codeload.github.com, so it works even where raw
-# `git clone` of aql-lang/aql is blocked).
+# `aql --compile X` and `aql X` fails the script. This harness builds its OWN
+# aql at the ref below (it equals the library's pin since the bump to 14036b4,
+# but pinning it here keeps the harness self-contained — it never depends on
+# whatever aql is on PATH). Cached under ~/.cache/aql-divergence; needs `go` +
+# network for the one-time build, fetched as a source tarball from
+# codeload.github.com so it works even where raw `git clone` of aql-lang/aql
+# is blocked.
 set -uo pipefail
 
-# aql-lang/aql @ main, 2026-06-24 (PR #182, claude/aql-client-issues-6b8new):
-# fixes the two regressions this library's aql-backend-report.md flagged — the
-# None/type-literal template-interpolation break (f247557) and the `convert`
-# return-type / fold-carrier `no_signature` check false positives (f247557 /
-# fc47452) — plus OpInterp (1b7b9ae) and gradual-Any. All five suites now
-# interpret, check (0 errors), and compile clean. Bump to re-check against a
-# newer backend.
+# aql-lang/aql @ main, 2026-06-24 (PR #182, claude/aql-client-issues-6b8new) —
+# the same commit the library now pins. It fixes the two regressions this
+# library's aql-backend-report.md flagged — the None/type-literal
+# template-interpolation break (f247557) and the `convert` return-type /
+# fold-carrier `no_signature` check false positives (f247557 / fc47452) — plus
+# OpInterp (1b7b9ae) and gradual-Any. All five suites interpret, check (0
+# errors), and compile clean. Bump in lockstep with the workflow AQL_REF.
 AQL_BYTECODE_REF=14036b4125a9ccbd9655503a1a4171c008d93d06
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

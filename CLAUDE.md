@@ -28,6 +28,10 @@ mistakes to avoid. Every example there is verified against the pinned
   pin, since the `--compile` CLI postdates it. See its `README.md`; the
   byte-compiler bug it guards against is `dx-report.md` §3.
 - Known AQL-runtime gotchas observed with the pinned build are in
-  `dx-report.md`. The pinned aql commit is single-sourced in `.github/workflows/test.yml`
-  (`AQL_REF`); a CI job fails if the hook or `api.json` drift from it.
+  `dx-report.md`. The pinned aql commit is single-sourced in the CI workflow's
+  `AQL_REF`; a CI job fails if the hook or `api.json` drift from it. The
+  workflow currently lives in `ci/test.yml` pending promotion to
+  `.github/workflows/` (this session can't push workflow files — see
+  `ci/README.md`); the stale `.github/workflows/test.yml` still on `main` is
+  superseded by it.
 - Forking this repo to start a new AQL library? See `TEMPLATE.md`.
