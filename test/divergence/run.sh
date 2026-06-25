@@ -30,7 +30,7 @@ set -uo pipefail
 # fold-carrier `no_signature` check false positives (f247557 / fc47452) — plus
 # OpInterp (1b7b9ae) and gradual-Any. All five suites interpret, check (0
 # errors), and compile clean. Bump in lockstep with the workflow AQL_REF.
-AQL_BYTECODE_REF=407fedad2ea2b30c3dde2f29cfbe60e55f94db4e
+AQL_BYTECODE_REF=f5e590f1418ef2b4f5c6179321a89b5723b63201
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
