@@ -20,6 +20,28 @@ Severity: **🔴 high** (silent wrong results / crash / blocks a use case) ·
 
 ---
 
+## Update (DX-driven aql fixes)
+
+A later aql HEAD split the accessor family: `get`/`getr` now **evaluate**
+their key (so `lst get i` reads the bound variable `i`), while literal
+bare-word field access moved to the new `.field` / `!.field` sugar
+(lowering to `dot`/`dotr`), with the quoted-atom `get field/q` form kept
+for the receiver-less stack-value case. Migrating this module to that
+surface was a test-only change: `bloom.aql` already read fields with
+`.field` / `!.` and only used `get` with String or computed keys, so it
+needed no edits; the six literal-field error reads in
+`test/bloom_unit_test.aql` (`e get code`, etc., where the caught error is
+a bound receiver and `code` is a literal field) became `e.code`. No
+`comp/r` box-pattern workaround applies here — this library does not use
+`comp/r`, so nothing of that kind was removed (that cleanup is specific to
+the sort/stats modules). Verification additionally depends on three
+upstream fixes carried by the local aql build under which this was checked
+— the `comp/r` frame over-pop fix, `StructUtil.parse` float fidelity, and
+the checker `no_signature` fix; the migrated suites and `aql check` are
+green only on a build carrying them.
+
+---
+
 ## Fixed since the `958c379b` report
 
 - **🔴→✅ Guard `if` + following `def`: guards fire first now**

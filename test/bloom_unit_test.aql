@@ -118,7 +118,7 @@ def _fill (iota 50 each [ var [[i] _seen Bloom.add (convert String i) end 0 ] ])
   def a ({n: 1000, p: 0.01} Bloom.make end)
   def b ({n:  500, p: 0.01} Bloom.make end)
   def e (do [a Bloom.merge b end])
-  incompatible_merge/q (e get code) Assert.equal end
+  incompatible_merge/q (e.code) Assert.equal end
 ] "merge-mismatch-code" Test.test end
 
 
@@ -126,11 +126,11 @@ def _fill (iota 50 each [ var [[i] _seen Bloom.add (convert String i) end 0 ] ])
 
 [
   def e1 (do [{n: 0, p: 0.01} Bloom.make end])
-  bad_input/q (e1 get code) Assert.equal end
+  bad_input/q (e1.code) Assert.equal end
   def e2 (do [{n: 1000, p: 0.7} Bloom.make end])
-  bad_input/q (e2 get code) Assert.equal end
+  bad_input/q (e2.code) Assert.equal end
   def e3 (do [{n: 1000} Bloom.make end])
-  bad_input/q (e3 get code) Assert.equal end
+  bad_input/q (e3.code) Assert.equal end
 ] "make-validates-input" Test.test end
 
 
@@ -154,9 +154,9 @@ def _fill (iota 50 each [ var [[i] _seen Bloom.add (convert String i) end 0 ] ])
 
 [
   def e1 (do ["this is not jsonic {" Bloom.decode end])
-  bad_payload/q (e1 get code) Assert.equal end
+  bad_payload/q (e1.code) Assert.equal end
   def e2 (do ["{n:100, p:0.05}" Bloom.decode end])
-  bad_payload/q (e2 get code) Assert.equal end
+  bad_payload/q (e2.code) Assert.equal end
 ] "decode-rejects-malformed" Test.test end
 
 
