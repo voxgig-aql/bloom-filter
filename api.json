@@ -1,7 +1,7 @@
 {
   "name": "bloom-filter",
   "version": "0.2.0",
-  "aql_ref": "f5e590f",
+  "aql_ref": "c5fbb04",
   "description": "Bloom filter for AQL: a probabilistic set (membership) with no false negatives and a tunable false-positive rate, exposed as the single `Bloom` namespace.",
   "conventions": {
     "import": "import \"./bloom.aql\"  — no `end` needed on the pinned build (structure-first engine); the library imports its own aql:* deps, callers need not",
