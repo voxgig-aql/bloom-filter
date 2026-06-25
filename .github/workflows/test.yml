@@ -13,9 +13,10 @@ on:
   workflow_dispatch:
 
 env:
-  # aql-lang/aql @ main, 2026-06-06. Pinned to the exact commit this
-  # module is verified against.
-  AQL_REF: db828ecb6ee1d161ff177134478f42c56484f051
+  # aql-lang/aql @ main, 2026-06-24 (PR #182, claude/aql-client-issues-6b8new).
+  # Pinned to the exact commit this module is verified against — the build
+  # where all five suites interpret, check (0 errors), and compile clean.
+  AQL_REF: f5e590f1418ef2b4f5c6179321a89b5723b63201
 
 jobs:
   test:
@@ -81,17 +82,36 @@ jobs:
       - name: Smoke test
         run: aql test/bloom_smoke_test.aql
 
-      # Advisory static check — NOT a gate. `aql check` is a structural type
-      # checker, but this library exports its words by reference (`make-bloom/r`,
-      # …) and dispatches dynamically, so the checker can't trace those exports
-      # and reports false `unused_def`/`no_signature` diagnostics on code the
-      # suites prove correct. We run it with `--soft` (always exits 0) and
-      # `continue-on-error` so the diagnostics surface in the log for a human to
-      # skim, without ever failing the build. The runnable suites above are the
-      # real gate.
+      # Advisory static check — NOT a gate. Checking bloom.aql ALONE still
+      # surfaces false `unused_def`/`no_signature` diagnostics: the library
+      # exports its words by reference (`make-bloom/r`, …) so the checker
+      # treats the export map as a non-use site and analyses each word body
+      # without caller types. (Checked THROUGH a suite — where the words are
+      # called with concrete types — `aql check` is clean; the gating
+      # `divergence` job below asserts exactly that.) Run with `--soft` +
+      # `continue-on-error` so the diagnostics surface without failing the build.
       - name: Static check (advisory, non-gating)
         continue-on-error: true
         run: aql check --soft bloom.aql
+
+  # Gating three-surface guard: every suite must interpret, `aql check` with
+  # zero errors, AND match under the byte compiler (`aql --compile`). run.sh
+  # builds its own aql (same pinned ref, via codeload tarball) and is
+  # self-contained. Safe to gate because the ref is pinned. See
+  # test/divergence/README.md.
+  divergence:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out bloom-filter
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: interpreter / check / byte-compiler agreement
+        run: test/divergence/run.sh
 
   # Lightweight guard for the agent-skill packaging and the pinned-ref single
   # source of truth (no aql needed). The plugin must bundle its own copy of the
@@ -132,8 +152,9 @@ jobs:
       # The pinned aql commit lives in several files; they must agree or a
       # session/CI builds a different interpreter than the one this library is
       # verified against (the exact drift that bit the trie sibling repo).
-      # .github/workflows/test.yml's env.AQL_REF (full 40-char) is the single source of truth;
-      # api.json stores a short prefix, so compare by prefix.
+      # This workflow's env.AQL_REF (full 40-char) is the single source of truth;
+      # api.json stores a short prefix, so compare by prefix; test/divergence/run.sh
+      # carries its own AQL_BYTECODE_REF that must match too.
       - name: Pinned aql ref is consistent across files
         run: |
           ref='${{ env.AQL_REF }}'
@@ -141,6 +162,11 @@ jobs:
           hook_ref=$(grep -oE 'AQL_REF=[0-9a-f]{7,40}' .claude/hooks/session-start.sh | head -1 | cut -d= -f2)
           if [ "$hook_ref" != "$ref" ]; then
             echo "::error file=.claude/hooks/session-start.sh::AQL_REF=$hook_ref != .github/workflows/test.yml AQL_REF=$ref"
+            fail=1
+          fi
+          div_ref=$(grep -oE 'AQL_BYTECODE_REF=[0-9a-f]{7,40}' test/divergence/run.sh | head -1 | cut -d= -f2)
+          if [ "$div_ref" != "$ref" ]; then
+            echo "::error file=test/divergence/run.sh::AQL_BYTECODE_REF=$div_ref != .github/workflows/test.yml AQL_REF=$ref"
             fail=1
           fi
           api_ref=$(python3 -c "import json;print(json.load(open('api.json'))['aql_ref'])")

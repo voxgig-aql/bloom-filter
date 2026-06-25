@@ -17,9 +17,8 @@ fi
 log() { echo "[session-start] $*" >&2; }
 
 # Keep this in lockstep with the workflow's AQL_REF (the consistency CI job
-# fails if they drift). The canonical workflow currently lives in ci/test.yml
-# pending promotion to .github/workflows/ (see ci/README.md). Full 40-char
-# commit so the build is reproducible.
+# fails if they drift). The canonical workflow lives in
+# .github/workflows/test.yml. Full 40-char commit so the build is reproducible.
 AQL_REF=f5e590f1418ef2b4f5c6179321a89b5723b63201
 BIN_DIR="$HOME/.local/bin"
 AQL="$BIN_DIR/aql"
