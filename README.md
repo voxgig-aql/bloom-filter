@@ -9,11 +9,11 @@ front.
 ```aql
 import "./bloom.aql"
 
-def seen ({n: 10000, p: 0.01} Bloom.make end)
-def _ (seen Bloom.add "ada" end)
+def seen ({n: 10000, p: 0.01} Bloom.make)
+def _ (seen Bloom.add "ada")
 
-print ((seen Bloom.contains "ada" end)) end     # => true
-print ((seen Bloom.contains "linus" end)) end   # => false
+print (seen Bloom.contains "ada")     # => true
+print (seen Bloom.contains "linus")   # => false
 ```
 
 > **Forking this to build a new AQL library?** This repo is a GitHub
