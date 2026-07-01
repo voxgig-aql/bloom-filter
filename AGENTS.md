@@ -6,6 +6,10 @@ AQL project. Every code block below is verified to run against
 [The one calling rule](#the-one-calling-rule) and
 [Common mistakes](#common-mistakes).
 
+> **Calling convention — forward args, receiver last:** `Bloom.verb …args
+> bf`. Piping `bf Bloom.verb …args` also works; only receiver-first
+> `Bloom.verb bf …args` misbinds (silently).
+
 ## What it is
 
 A probabilistic set: "have I seen this item?" in little memory, with **no
@@ -28,46 +32,53 @@ import "./bloom.aql"
 
 ## The one calling rule
 
-AQL is not C/Python/JS. There is no `f(a, b)` and no `obj.method(a)`.
-A call is **receiver-first, arguments forward**:
+AQL is not C/Python/JS: there is no `f(a, b)` and no `obj.method(a)`.
+Every public `Bloom.*` word takes the **receiver — the `BloomFilter` — as
+its LAST argument**. Because the receiver is last, two orders bind
+correctly:
 
 ```
-receiver Bloom.verb arg1 arg2
+Bloom.verb arg1 arg2 receiver     # forward form (canonical)
+receiver Bloom.verb arg1 arg2     # piping form (also fine)
 ```
 
-— the **receiver/data comes first**, then the verb, then any extra
-arguments in the *forward* position (after the verb). **This forward-argument
-form is the preferred, idiomatic shape.** To use a call's result as a value,
-group it in parens:
+- **Forward form (preferred/canonical):** verb first, every argument
+  forward, receiver last — `Bloom.add "x" bf`.
+- **Piping form (equally correct):** the receiver flows in from the left /
+  off the stack — `bf Bloom.add "x"`.
+
+Group a call in parens to use its result as a value:
 
 ```aql
 def bf ({n: 1000, p: 0.01} Bloom.make)
-def _ (bf Bloom.add "alice")
-print (bf Bloom.contains "alice")    # => true
+def _ (Bloom.add "alice" bf)
+print (Bloom.contains "alice" bf)    # => true
+print (bf Bloom.contains "alice")    # => true  (piping — same result)
 ```
 
-**Prefer the forward form; avoid unnecessary `end`.** On the pinned
-(structure-first) build, a call is already terminated by the parens around it
-— or by being the complete forward argument of `print` / `def` / another verb
-— so a trailing `end` *there* is redundant noise. Don't sprinkle `end` on
-every call: reach for parens instead, and reserve `end` only for a **bare,
-ungrouped** call at statement level that is followed by more tokens (where the
-verb would otherwise swallow the next one). A stray `end` is harmless if you
-leave one — older snippets still carry them — but the clean form omits it.
+**The only wrong order is receiver-*first*, all-forward.** `Bloom.add bf
+"x"` binds `bf` as the *item* (the receiver slot goes unfilled), so the
+call *silently* returns the filter unchanged — no error, and `contains`
+then reads `false`. Never write `Bloom.verb receiver arg`.
 
-**Keep the receiver first — do *not* flip to an all-forward `verb receiver
-arg` order.** `bf Bloom.add "x"` is correct; `Bloom.add bf "x"` is **not**:
-these words take their arguments as `(item, receiver)`, so moving the receiver
-after the verb binds it to the wrong slot and *silently* misbehaves (the
-filter comes back unchanged and `contains` reads `false` — no error). `aql
-check` may print a `mixed_form_call` **info** nudging you to an all-forward
-rewrite — **ignore it for `Bloom.*` calls**; receiver-first is the intended
-form and checks at 0 errors.
+**Avoid unnecessary `end`.** On the pinned (structure-first) build a call
+is already terminated by the parens around it — or by being the complete
+forward argument of `print` / `def` / another verb — so a trailing `end`
+*there* is redundant noise. Reach for parens instead, and reserve `end`
+only for a **bare, ungrouped** call at statement level that is followed by
+more tokens. A stray `end` is harmless — older snippets still carry them —
+but the clean form omits it.
+
+**`aql check`'s `mixed_form_call` info is compatible here.** It nudges
+toward the all-forward shape; following it while keeping the receiver last
+yields the canonical `Bloom.add "x" bf` — that's correct. Just never let it
+push the receiver in front of the args (`Bloom.add bf "x"`).
 
 ## API reference (exact call shapes)
 
-Call shapes below are written in the preferred clean form (forward args, no
-redundant `end`); group each in parens to use its result as a value.
+Call shapes below use the piping form (`receiver Bloom.verb args`); the
+forward form `Bloom.verb args receiver` binds identically (e.g. `Bloom.add
+item bf`). Group each in parens to use its result as a value.
 
 | Call | Returns | Notes |
 |------|---------|-------|
@@ -157,7 +168,7 @@ print (back Bloom.contains "ada")        # => true
 |---------------|---------|-----|
 | `Bloom.contains(bf, "x")` | `(bf Bloom.contains "x")` | No `f(a,b)` syntax in AQL. |
 | `bf.contains("x")` | `(bf Bloom.contains "x")` | No method-call syntax. |
-| `Bloom.add bf "x"` (verb-first / all-forward) | `bf Bloom.add "x"` (receiver first) | These words bind `(item, receiver)`; an all-forward order misbinds and **silently** does nothing. Ignore `aql check`'s `mixed_form_call` nudge here. |
+| `Bloom.add bf "x"` (receiver *first*, all-forward) | `Bloom.add "x" bf` (forward, receiver last) or `bf Bloom.add "x"` (piping) | The receiver is the **last** param; putting it first binds it as the *item* and silently misbinds. The `mixed_form_call` nudge is fine — it points at the forward form. |
 | `(bf Bloom.contains "x" end)` everywhere | `(bf Bloom.contains "x")` | Parens already terminate the call — the `end` is redundant. Reserve `end` for a bare statement-level call followed by more tokens. |
 | `def bf2 (bf Bloom.add "x")` then use `bf` as "before" | `add` mutates in place | `bf` and the returned value are the **same** object; there is no immutable copy. |
 | treat `contains ⇒ true` as certain | verify against source of truth | `true` is probabilistic (≈ rate `p`); only `false` is certain. |

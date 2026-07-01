@@ -1,6 +1,6 @@
 ---
 name: bloom-filter-aql
-description: Use when writing or editing AQL code that calls the Bloom bloom-filter library — Bloom.make / Bloom.add / Bloom.contains / Bloom.count / Bloom.params / Bloom.merge / Bloom.encode / Bloom.decode, or any file that does `import "./bloom.aql"`. Provides the exact AQL calling convention (which is not C/Python/JS), the API with mutation and probabilistic semantics, verified copy-paste idioms, and fixes for the mistakes agents most often make (foreign call syntax like `bf.contains(x)`, flipping to an all-forward `Bloom.add bf x` order that silently misbinds, over-using `end`, assuming `add` returns a new filter).
+description: Use when writing or editing AQL code that calls the Bloom bloom-filter library — Bloom.make / Bloom.add / Bloom.contains / Bloom.count / Bloom.params / Bloom.merge / Bloom.encode / Bloom.decode, or any file that does `import "./bloom.aql"`. Provides the exact AQL calling convention (which is not C/Python/JS), the API with mutation and probabilistic semantics, verified copy-paste idioms, and fixes for the mistakes agents most often make (foreign call syntax like `bf.contains(x)`, putting the receiver *first* in an all-forward `Bloom.add bf x` order that silently misbinds — the receiver goes LAST, over-using `end`, assuming `add` returns a new filter).
 ---
 
 # Calling the Bloom bloom-filter library (AQL)
@@ -24,26 +24,36 @@ import "./bloom.aql"
 
 ## The one calling rule
 
-AQL has no `f(a, b)` and no `obj.method(a)`. A call is **receiver-first,
-arguments forward**:
+AQL has no `f(a, b)` and no `obj.method(a)`. Every public `Bloom.*` word
+takes the **receiver — the `BloomFilter` — as its LAST argument**. Because
+the receiver is last, two orders bind correctly:
 
 ```
-receiver Bloom.verb arg1 arg2
+Bloom.verb arg1 arg2 receiver     # forward form (canonical)
+receiver Bloom.verb arg1 arg2     # piping form (also fine)
 ```
 
-Receiver/data first, then the verb, then any extra args in the *forward*
-position. **This forward-argument form is preferred.** Group the call in
-parens to use its result as a value: `(bf Bloom.contains "x")`.
+- **Forward form (preferred/canonical):** verb first, every argument
+  forward, receiver last — `Bloom.add "x" bf`.
+- **Piping form (equally correct):** the receiver flows in from the left /
+  off the stack — `bf Bloom.add "x"`.
 
+Group the call in parens to use its result as a value:
+`(Bloom.contains "x" bf)` or `(bf Bloom.contains "x")`.
+
+- **The only wrong order is receiver-*first*, all-forward.**
+  `Bloom.add bf "x"` binds `bf` as the *item* (the receiver slot goes
+  unfilled), so the call *silently* returns the filter unchanged — no error.
+  Never write `Bloom.verb receiver arg`.
 - **Avoid unnecessary `end`.** On this (structure-first) build the parens
   around a call already terminate it — as does being the complete forward
   argument of `print` / `def` / another verb — so a trailing `end` there is
   redundant. Reach for parens; reserve `end` only for a bare statement-level
   call followed by more tokens. (A stray `end` is harmless.)
-- **Keep the receiver first.** `bf Bloom.add "x"` is right; the all-forward
-  `Bloom.add bf "x"` is **wrong** — these words bind `(item, receiver)`, so
-  flipping the order misbinds and *silently* does nothing. `aql check`'s
-  `mixed_form_call` info nudges toward all-forward — ignore it for `Bloom.*`.
+- **`aql check`'s `mixed_form_call` info is compatible here.** It nudges
+  toward the all-forward shape; following it while keeping the receiver last
+  yields the canonical `Bloom.add "x" bf` — that's correct. Just never let it
+  push the receiver in front of the args (`Bloom.add bf "x"`).
 
 ## API
 
@@ -61,6 +71,18 @@ parens to use its result as a value: `(bf Bloom.contains "x")`.
 Construct filters only via `Bloom.make`; treat `BloomFilter` fields as
 read-only. Catch errors with `do […] error […]`; read `e get code` /
 `e get message` in the handler.
+
+By-design notes (AQL semantics that bite here):
+
+- **`eq` is identity, not structural equality.** `Bloom.params` returns a
+  fresh `Map`, so comparing two params maps with `eq` is `false` even when
+  equal — use `deq` for structural comparison of Maps/Lists.
+- **A `BloomFilter` mutates in place** (`add`/`merge`), unlike Maps/Lists,
+  which are immutable and copy-return from `set`/`get`. There is no immutable
+  filter copy; keep no "before" alias.
+- **Integer overflow fails loud.** AQL ints are 63-bit and raise
+  `integer_overflow` rather than wrapping — an absurd `n` to `Bloom.make`
+  errors, it does not silently truncate.
 
 ## Idioms (verified)
 
@@ -100,7 +122,7 @@ def back (snap Bloom.decode)
 | ✗ Don't | ✓ Do | Why |
 |---------|------|-----|
 | `Bloom.contains(bf, "x")` / `bf.contains("x")` | `(bf Bloom.contains "x")` | AQL has no call/method syntax. |
-| `Bloom.add bf "x"` (all-forward / verb-first) | `bf Bloom.add "x"` (receiver first) | Words bind `(item, receiver)`; flipping silently misbinds. Ignore the `mixed_form_call` nudge. |
+| `Bloom.add bf "x"` (receiver *first*, all-forward) | `Bloom.add "x" bf` (forward, receiver last) or `bf Bloom.add "x"` (piping) | The receiver is the **last** param; putting it first binds it as the *item* and silently misbinds. The `mixed_form_call` nudge is fine — it points at the forward form. |
 | `(bf Bloom.contains "x" end)` everywhere | `(bf Bloom.contains "x")` | Parens already terminate — the `end` is redundant. |
 | keep a pre-`add` copy of `bf` | none — `add` mutates in place | The argument and the return value are the same object. |
 | trust `contains ⇒ true` | verify against the real store | `true` is probabilistic; only `false` is certain. |

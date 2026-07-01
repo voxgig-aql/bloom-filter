@@ -16,6 +16,11 @@ print (seen Bloom.contains "ada")     # => true
 print (seen Bloom.contains "linus")   # => false
 ```
 
+> **Calling convention — forward args, receiver last:**
+> `Bloom.verb …args bf`. Piping `bf Bloom.verb …args` also works; only
+> receiver-first `Bloom.verb bf …args` misbinds (silently). Details in
+> **[AGENTS.md](AGENTS.md)**.
+
 > **Forking this to build a new AQL library?** This repo is a GitHub
 > template — read **[TEMPLATE.md](TEMPLATE.md)** for the instantiation
 > checklist, then delete it.
@@ -54,8 +59,8 @@ filters and just want the API? Jump to the [Reference](docs/reference.md).
 | `bf Bloom.encode`        | serialize to a snapshot string |
 | `text Bloom.decode`      | rebuild a filter from a snapshot string |
 
-Full details, including the calling convention (every call ends with
-`end`), are in the [Reference](docs/reference.md).
+Full details, including the calling convention (forward args, receiver
+last), are in the [Reference](docs/reference.md) and [AGENTS.md](AGENTS.md).
 
 ## For AI coding agents
 
